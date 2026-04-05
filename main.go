@@ -25,10 +25,7 @@ func LoadEnv() {
 	}
 }
 
-func main() {
-	LoadEnv()
-	db := common.InitDatabase()
-	Migrate(db)
+func setupRouter(db *gorm.DB) *gin.Engine {
 	userRepository := users.NewUserRepository(db)
 	userService := users.NewUserService(userRepository)
 	userHandler := users.NewUserHandler(userService)
@@ -37,14 +34,7 @@ func main() {
 	articleService := articles.NewArticleService(articleRepository)
 	articleHandler := articles.NewArticleHandler(articleService)
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		log.Println("failed to get sql.DB:", err)
-	} else {
-		defer sqlDB.Close()
-	}
 	r := gin.Default()
-
 	v1 := r.Group("/api")
 	users.UsersRegister(v1.Group("/users"), userHandler)
 
@@ -55,6 +45,27 @@ func main() {
 	authedArticles := v1.Group("/articles")
 	authedArticles.Use(users.AuthMiddleware(userService))
 	articles.ArticlesRegister(authedArticles, articleHandler)
+
+	return r
+}
+
+func closeDB(db *gorm.DB) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Println("failed to get sql.DB:", err)
+		return
+	}
+	sqlDB.Close()
+}
+
+func main() {
+	LoadEnv()
+	db := common.InitDatabase()
+	Migrate(db)
+
+	defer closeDB(db)
+
+	r := setupRouter(db)
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
