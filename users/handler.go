@@ -55,3 +55,16 @@ func (handler UserHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: userModel}.Response()})
 }
+
+func (handler UserHandler) CurrentUser(c *gin.Context) {
+	currentUser, ok := CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: UserOutput{
+		UserModel: currentUser,
+		Token:     common.GenToken(currentUser.ID),
+	}}.Response()})
+}

@@ -44,7 +44,7 @@ func (service UserService) Register(input RegisterUserInput) (UserOutput, error)
 	if err == nil {
 		return UserOutput{}, ErrEmailAlreadyTaken
 	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return UserOutput{}, err
 	}
 

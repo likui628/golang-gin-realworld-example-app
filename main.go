@@ -43,6 +43,7 @@ func main() {
 
 	authed := v1.Group("/user")
 	authed.Use(users.AuthMiddleware(userService))
+	users.UserRegister(authed, userHandler)
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")

@@ -61,14 +61,7 @@ func performAuthenticatedRequest(t *testing.T, authorizationHeader string) *http
 	authorized := r.Group("/user")
 	service := newTestUserService()
 	authorized.Use(AuthMiddleware(service))
-	authorized.GET("", func(c *gin.Context) {
-		currentUser, ok := CurrentUser(c)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, common.NewError("auth", ErrUnauthorized))
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: UserOutput{UserModel: currentUser}}.Response()})
-	})
+	UserRegister(authorized, newTestUserHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/user", nil)
 	if authorizationHeader != "" {
@@ -386,6 +379,22 @@ func TestAuthMiddlewareSuccess(t *testing.T) {
 
 	if userPayload["email"] != "auth@example.com" {
 		t.Fatalf("expected authenticated email, got %v", userPayload["email"])
+	}
+
+	if userPayload["username"] != "authuser" {
+		t.Fatalf("expected authenticated username, got %v", userPayload["username"])
+	}
+
+	if _, exists := userPayload["bio"]; !exists {
+		t.Fatalf("expected bio field, got %v", userPayload)
+	}
+
+	if _, exists := userPayload["image"]; !exists {
+		t.Fatalf("expected image field, got %v", userPayload)
+	}
+
+	if userPayload["token"] == "" {
+		t.Fatalf("expected non-empty token, got empty")
 	}
 }
 
