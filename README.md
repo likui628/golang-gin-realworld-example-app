@@ -90,10 +90,10 @@ go test ./...
 
 ## Test Coverage
 Current test coverage (2026):
-* Total: -
-* articles: -
-* users: -
-* common: -
+* Total: 47.1%
+* articles:  83.7%
+* users: 65.6% 
+* common: 0.0% 
 
 Run coverage report:
 

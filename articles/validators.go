@@ -7,9 +7,10 @@ import (
 
 type CreateArticleInputValidator struct {
 	Article struct {
-		Title       string `json:"title" binding:"required"`
-		Description string `json:"description" binding:"required"`
-		Body        string `json:"body" binding:"required"`
+		Title       string   `json:"title" binding:"required"`
+		Description string   `json:"description" binding:"required"`
+		Body        string   `json:"body" binding:"required"`
+		TagList     []string `json:"tagList"`
 	} `json:"article"`
 }
 
@@ -22,5 +23,6 @@ func (validator *CreateArticleInputValidator) Input() CreateArticleInput {
 		Title:       validator.Article.Title,
 		Description: validator.Article.Description,
 		Body:        validator.Article.Body,
+		TagList:     validator.Article.TagList,
 	}
 }

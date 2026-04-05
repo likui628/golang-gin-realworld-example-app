@@ -6,6 +6,7 @@ type CreateArticleInput struct {
 	Title       string
 	Description string
 	Body        string
+	TagList     []string
 }
 
 type ArticleService struct {
@@ -17,12 +18,18 @@ func NewArticleService(repository ArticleRepository) ArticleService {
 }
 
 func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleInput) (ArticleModel, error) {
+	tags, err := service.repository.FindOrCreateTags(input.TagList)
+	if err != nil {
+		return ArticleModel{}, err
+	}
+
 	article := ArticleModel{
 		Slug:        common.GenerateSlug(input.Title),
 		Title:       input.Title,
 		Description: input.Description,
 		Body:        input.Body,
 		AuthorId:    authorID,
+		Tags:        tags,
 	}
 
 	if err := service.repository.Create(&article); err != nil {

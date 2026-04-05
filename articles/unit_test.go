@@ -78,7 +78,7 @@ func TestCreateArticleSuccess(t *testing.T) {
 	setupArticleTestDB(t)
 	author := seedArticleAuthor(t)
 
-	body := `{"article":{"title":"My First Article","description":"Short summary","body":"Full body text"}}`
+	body := `{"article":{"title":"My First Article","description":"Short summary","body":"Full body text","tagList":["go","gin"]}}`
 	resp := performCreateArticleRequest(t, "Token "+common.GenToken(author.ID), body)
 
 	if resp.Code != http.StatusCreated {
@@ -104,7 +104,7 @@ func TestCreateArticleSuccess(t *testing.T) {
 	}
 
 	var saved ArticleModel
-	if err := common.DB.Where("slug = ?", "my-first-article").First(&saved).Error; err != nil {
+	if err := common.DB.Preload("Tags").Where("slug = ?", "my-first-article").First(&saved).Error; err != nil {
 		t.Fatalf("expected article persisted in db, query error: %v", err)
 	}
 
@@ -118,6 +118,16 @@ func TestCreateArticleSuccess(t *testing.T) {
 
 	if saved.Body != "Full body text" {
 		t.Fatalf("expected body persisted, got %q", saved.Body)
+	}
+	if len(saved.Tags) != 2 {
+		t.Fatalf("expected 2 tags persisted, got %d", len(saved.Tags))
+	}
+	tagSet := map[string]bool{}
+	for _, tag := range saved.Tags {
+		tagSet[tag.Tag] = true
+	}
+	if !tagSet["go"] || !tagSet["gin"] {
+		t.Fatalf("expected tags 'go' and 'gin', got %v", saved.Tags)
 	}
 }
 
