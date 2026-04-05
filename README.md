@@ -7,6 +7,30 @@ This codebase was created to demonstrate a fully fledged fullstack application b
 
 https://github.com/gothinkster/golang-gin-realworld-example-app
 
+## Architecture
+This project follows a layered architecture with strict one-way dependencies:
+
+Handler → Service → Repository → Database
+
+Each layer has a single responsibility and depends only on the layer below it.
+
+| File | Responsibility |
+|---|---|
+| `models.go` | GORM schema definition only |
+| `repository.go` | Database access interface and GORM implementation |
+| `service.go` | Business logic |
+| `handler.go` | HTTP request binding and response, receives injected service |
+| `routers.go` | Route registration only |
+
+Dependencies are wired once at startup in `main.go`:
+```go
+userRepository := users.NewUserRepository(db)
+userService    := users.NewUserService(userRepository)
+userHandler    := users.NewUserHandler(userService)
+```
+
+No layer constructs its own dependencies at request time.
+
 ## Environment Config
 
 Environment variables can be set directly in your shell or via a .env file.
