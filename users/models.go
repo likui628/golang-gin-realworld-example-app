@@ -32,8 +32,19 @@ func (u *UserModel) setPassword(password string) error {
 	return nil
 }
 
+func (u *UserModel) checkPassword(password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password))
+}
+
 func SaveOne(data interface{}) error {
 	db := common.DB
 	err := db.Save(data).Error
 	return err
+}
+
+func FindOneUser(condition interface{}) (UserModel, error) {
+	db := common.DB
+	var userModel UserModel
+	err := db.Where(condition).First(&userModel).Error
+	return userModel, err
 }

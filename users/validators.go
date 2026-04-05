@@ -39,3 +39,25 @@ func NewUserModelValidator() UserModelValidator {
 	userModelValidator := UserModelValidator{}
 	return userModelValidator
 }
+
+type UserLoginValidator struct {
+	User struct {
+		Email    string `form:"email" json:"email" binding:"required,email"`
+		Password string `form:"password" json:"password" binding:"required,min=8,max=255"`
+	} `json:"user"`
+	userModel UserModel `json:"-"`
+}
+
+func (self *UserLoginValidator) Bind(c *gin.Context) error {
+	err := common.Bind(c, self)
+	if err != nil {
+		return err
+	}
+	self.userModel.Email = self.User.Email
+	return nil
+}
+
+func NewUserLoginValidator() UserLoginValidator {
+	userLoginValidator := UserLoginValidator{}
+	return userLoginValidator
+}

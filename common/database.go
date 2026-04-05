@@ -18,6 +18,10 @@ func GetDBPath() string {
 	return dbPath
 }
 
+func GetDB() *gorm.DB {
+	return DB
+}
+
 func InitDatabase() *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(GetDBPath()), &gorm.Config{})
 	if err != nil {
