@@ -47,7 +47,7 @@ func performUserRegistrationRequest(t *testing.T, body string) *httptest.Respons
 func TestUsersRegistrationSuccess(t *testing.T) {
 	setupTestDB(t)
 
-	body := `{"user":{"username":"tester123","email":"tester@example.com","password":"password123","bio":"hello","image":"https://example.com/avatar.png"}}`
+	body := `{"user":{"username":"tester123","email":"tester@example.com","password":"password123","bio":"hello","image":"` + image_url + `"}}`
 	resp := performUserRegistrationRequest(t, body)
 
 	if resp.Code != http.StatusCreated {
