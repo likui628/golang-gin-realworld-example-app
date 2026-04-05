@@ -5,8 +5,6 @@
 
 This codebase was created to demonstrate a fully fledged fullstack application built with **Golang/Gin** including CRUD operations, authentication, routing, pagination, and more.
 
-https://github.com/gothinkster/golang-gin-realworld-example-app
-
 ## Architecture
 This project follows a layered architecture with strict one-way dependencies:
 
@@ -43,6 +41,46 @@ JWT_SECRET=replace-me        # Required secret used to sign and verify JWT token
 ```
 
 See .env.example for a complete template.
+
+## Install Dependencies
+This project targets Go 1.26.1 as declared in `go.mod`.
+
+1. Install Go 1.26.1 or a compatible newer version.
+2. Create a local environment file from the example.
+3. Download the Go module dependencies.
+
+```powershell
+Copy-Item .env.example .env
+go mod download
+```
+
+Required note:
+Set `JWT_SECRET` in `.env` before starting the server, otherwise authentication tokens should not be considered secure.
+
+SQLite note:
+This project uses `github.com/glebarez/sqlite`, so it does not require CGO or a local GCC toolchain to run on Windows.
+
+## Run the Server
+After installing dependencies and configuring `.env`, start the API from the project root:
+
+```powershell
+go run .
+```
+
+The server reads `.env` on startup, runs the database migration automatically, and listens on `PORT` (default: `8080`).
+
+Once it is running, the API is available at:
+
+```text
+http://localhost:8080/api
+```
+
+If you want to use a different port for local development:
+
+```powershell
+$env:PORT = "3000"
+go run .
+```
 
 ## Testing
 From the project root, run:
