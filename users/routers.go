@@ -10,8 +10,11 @@ import (
 
 func UsersRegister(router *gin.RouterGroup) {
 	router.POST("", UsersRegistration)
-	router.POST("/", UsersRegistration)
 	router.POST("/login", UsersLogin)
+}
+
+func newUserService() UserService {
+	return NewUserService(NewUserRepository(common.GetDB()))
 }
 
 func UsersRegistration(c *gin.Context) {
@@ -21,13 +24,17 @@ func UsersRegistration(c *gin.Context) {
 		return
 	}
 
-	if err := SaveOne(&userModelValidator.userModel); err != nil {
+	userModel, err := newUserService().Register(userModelValidator.Input())
+	if err != nil {
+		if errors.Is(err, ErrEmailAlreadyTaken) {
+			c.JSON(http.StatusUnprocessableEntity, common.NewError("email", err))
+			return
+		}
 		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
 		return
 	}
 
-	c.Set("my_user_model", userModelValidator.userModel)
-	serializer := UserSerializer{c}
+	serializer := UserSerializer{User: userModel}
 	c.JSON(http.StatusCreated, gin.H{"user": serializer.Response()})
 }
 
@@ -38,17 +45,16 @@ func UsersLogin(c *gin.Context) {
 		return
 	}
 
-	userModel, err := FindOneUser(&UserModel{Email: loginValidator.userModel.Email})
+	userModel, err := newUserService().Login(loginValidator.Input())
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, common.NewError("login", errors.New("Not Registered email or invalid password")))
+		if errors.Is(err, ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, common.NewError("login", err))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
 		return
 	}
 
-	if userModel.checkPassword(loginValidator.User.Password) != nil {
-		c.JSON(http.StatusUnauthorized, common.NewError("login", errors.New("Not Registered email or invalid password")))
-		return
-	}
-	UpdateContextUserModel(c, userModel.ID)
-	serializer := UserSerializer{c}
+	serializer := UserSerializer{User: userModel}
 	c.JSON(http.StatusOK, gin.H{"user": serializer.Response()})
 }

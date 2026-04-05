@@ -1,7 +1,9 @@
 package common
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,21 +12,79 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const JWTSecret = "A String Very Very Very Strong!!@##$!@#$"      // #nosec G101
 const RandomPassword = "A String Very Very Very Random!!@##$!@#4" // #nosec G101
 
+const JWTSecretEnvVar = "JWT_SECRET"
+
+var (
+	ErrInvalidToken    = errors.New("invalid token")
+	ErrMissingJWTSecret = errors.New("missing jwt secret")
+)
+
+func GetJWTSecret() (string, error) {
+	jwtSecret := os.Getenv(JWTSecretEnvVar)
+	if jwtSecret == "" {
+		return "", ErrMissingJWTSecret
+	}
+	return jwtSecret, nil
+}
+
 func GenToken(id uint) string {
+	jwtSecret, err := GetJWTSecret()
+	if err != nil {
+		fmt.Printf("failed to load JWT secret for id %d: %v\n", id, err)
+		return ""
+	}
+
 	jwt_token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":  id,
 		"exp": time.Now().Add(time.Hour * 24).Unix(),
 	})
 	// Sign and get the complete encoded token as a string
-	token, err := jwt_token.SignedString([]byte(JWTSecret))
+	token, err := jwt_token.SignedString([]byte(jwtSecret))
 	if err != nil {
 		fmt.Printf("failed to sign JWT token for id %d: %v\n", id, err)
 		return ""
 	}
 	return token
+}
+
+func ParseToken(tokenString string) (uint, error) {
+	jwtSecret, err := GetJWTSecret()
+	if err != nil {
+		return 0, ErrInvalidToken
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return []byte(jwtSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return 0, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, ErrInvalidToken
+	}
+
+	idValue, ok := claims["id"]
+	if !ok {
+		return 0, ErrInvalidToken
+	}
+
+	switch value := idValue.(type) {
+	case float64:
+		return uint(value), nil
+	case int:
+		return uint(value), nil
+	case uint:
+		return value, nil
+	default:
+		return 0, ErrInvalidToken
+	}
 }
 
 type CommonError struct {

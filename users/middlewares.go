@@ -1,16 +1,73 @@
 package users
 
 import (
+	"errors"
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/likui628/golang-gin-realworld-example-app/common"
 )
 
-func UpdateContextUserModel(c *gin.Context, my_user_id uint) {
-	var myUserModel UserModel
-	if my_user_id != 0 {
-		db := common.GetDB()
-		db.First(&myUserModel, my_user_id)
+const currentUserContextKey = "current_user"
+
+var ErrUnauthorized = errors.New("unauthorized")
+
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authorizationHeader := c.GetHeader("Authorization")
+		tokenString, ok := extractToken(authorizationHeader)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+			return
+		}
+
+		userID, err := common.ParseToken(tokenString)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+			return
+		}
+
+		userModel, err := newUserService().FindByID(userID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+			return
+		}
+
+		c.Set(currentUserContextKey, userModel)
+		c.Next()
 	}
-	c.Set("my_user_id", my_user_id)
-	c.Set("my_user_model", myUserModel)
+}
+
+func CurrentUser(c *gin.Context) (UserModel, bool) {
+	value, exists := c.Get(currentUserContextKey)
+	if !exists {
+		return UserModel{}, false
+	}
+
+	userModel, ok := value.(UserModel)
+	if !ok {
+		return UserModel{}, false
+	}
+
+	return userModel, true
+}
+
+func extractToken(headerValue string) (string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(headerValue), " ", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+
+	scheme := strings.ToLower(parts[0])
+	if scheme != "token" && scheme != "bearer" {
+		return "", false
+	}
+
+	token := strings.TrimSpace(parts[1])
+	if token == "" {
+		return "", false
+	}
+
+	return token, true
 }

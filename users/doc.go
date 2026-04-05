@@ -1,12 +1,20 @@
 /*
-The user module containing the user CRU operation.
+Package users contains the user authentication and user-facing HTTP layer.
 
-model.go: definition of orm based data model
+models.go: GORM-backed user model and password helpers
 
-routers.go: router binding and core logic
+repository.go: typed persistence boundary for user lookups and writes
 
-serializers.go: definition the schema of return data
+service.go: registration, login, and user retrieval business logic
 
-validators.go: definition the validator of form data
+routers.go: Gin route registration and thin HTTP handlers
+
+middlewares.go: JWT auth middleware and current-user context access
+
+serializers.go: response DTOs for user payloads
+
+validators.go: request binding and validation for user endpoints
+
+unit_test.go: registration, login, and auth middleware regression tests
 */
 package users

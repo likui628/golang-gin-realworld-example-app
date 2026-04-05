@@ -14,25 +14,20 @@ type UserModelValidator struct {
 		Bio      string `form:"bio" json:"bio" binding:"max=1024"`
 		Image    string `form:"image" json:"image" binding:"omitempty,url"`
 	} `json:"user"`
-	userModel UserModel `json:"-"`
 }
 
-func (self *UserModelValidator) Bind(c *gin.Context) error {
-	err := common.Bind(c, self)
-	if err != nil {
-		return err
-	}
-	self.userModel.Username = self.User.Username
-	self.userModel.Email = self.User.Email
-	self.userModel.Bio = self.User.Bio
+func (validator *UserModelValidator) Bind(c *gin.Context) error {
+	return common.Bind(c, validator)
+}
 
-	if self.User.Password != common.RandomPassword {
-		self.userModel.setPassword(self.User.Password)
+func (validator UserModelValidator) Input() RegisterUserInput {
+	return RegisterUserInput{
+		Username: validator.User.Username,
+		Email:    validator.User.Email,
+		Password: validator.User.Password,
+		Bio:      validator.User.Bio,
+		Image:    validator.User.Image,
 	}
-	if self.User.Image != "" {
-		self.userModel.Image = &self.User.Image
-	}
-	return nil
 }
 
 func NewUserModelValidator() UserModelValidator {
@@ -45,16 +40,17 @@ type UserLoginValidator struct {
 		Email    string `form:"email" json:"email" binding:"required,email"`
 		Password string `form:"password" json:"password" binding:"required,min=8,max=255"`
 	} `json:"user"`
-	userModel UserModel `json:"-"`
 }
 
-func (self *UserLoginValidator) Bind(c *gin.Context) error {
-	err := common.Bind(c, self)
-	if err != nil {
-		return err
+func (validator *UserLoginValidator) Bind(c *gin.Context) error {
+	return common.Bind(c, validator)
+}
+
+func (validator UserLoginValidator) Input() LoginUserInput {
+	return LoginUserInput{
+		Email:    validator.User.Email,
+		Password: validator.User.Password,
 	}
-	self.userModel.Email = self.User.Email
-	return nil
 }
 
 func NewUserLoginValidator() UserLoginValidator {

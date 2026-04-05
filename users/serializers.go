@@ -1,12 +1,11 @@
 package users
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/likui628/golang-gin-realworld-example-app/common"
 )
 
 type UserSerializer struct {
-	c *gin.Context
+	User UserModel
 }
 
 type UserResponse struct {
@@ -17,18 +16,17 @@ type UserResponse struct {
 	Token    string `json:"token"`
 }
 
-func (self *UserSerializer) Response() UserResponse {
-	myUserModel := self.c.MustGet("my_user_model").(UserModel)
+func (serializer UserSerializer) Response() UserResponse {
 	image := ""
-	if myUserModel.Image != nil {
-		image = *myUserModel.Image
+	if serializer.User.Image != nil {
+		image = *serializer.User.Image
 	}
 	user := UserResponse{
-		Username: myUserModel.Username,
-		Email:    myUserModel.Email,
-		Bio:      myUserModel.Bio,
+		Username: serializer.User.Username,
+		Email:    serializer.User.Email,
+		Bio:      serializer.User.Bio,
 		Image:    image,
-		Token:    common.GenToken(myUserModel.ID),
+		Token:    common.GenToken(serializer.User.ID),
 	}
 	return user
 }

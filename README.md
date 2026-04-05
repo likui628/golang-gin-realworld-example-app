@@ -15,6 +15,7 @@ Available environment variables:
 PORT=8080                     # Server port (default: 8080)
 GIN_MODE=debug               # Gin mode: debug or release
 DB_PATH=./data/gorm.db       # SQLite database path (default: ./data/gorm.db)
+JWT_SECRET=replace-me        # Required secret used to sign and verify JWT tokens
 ```
 
 See .env.example for a complete template.
