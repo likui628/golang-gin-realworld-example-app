@@ -26,6 +26,13 @@ type LoginUserInput struct {
 	Password string
 }
 
+type UpdateUserInput struct {
+	Username string
+	Email    string
+	Bio      string
+	Image    string
+}
+
 type UserOutput struct {
 	UserModel
 	Token string
@@ -82,6 +89,35 @@ func (service UserService) Login(input LoginUserInput) (UserOutput, error) {
 	if err := checkPassword(user.PasswordHash, input.Password); err != nil {
 		return UserOutput{}, ErrInvalidCredentials
 	}
+	return UserOutput{UserModel: user, Token: common.GenToken(user.ID)}, nil
+}
+
+func (service UserService) UpdateUser(id uint, input UpdateUserInput) (UserOutput, error) {
+	user, err := service.repository.FindByID(id)
+	if err != nil {
+		return UserOutput{}, err
+	}
+
+	if input.Username != "" {
+		user.Username = input.Username
+	}
+	if input.Email != "" {
+		user.Email = input.Email
+	}
+	if input.Bio != "" {
+		user.Bio = input.Bio
+	}
+	if input.Image != "" {
+		user.Image = &input.Image
+	}
+
+	if err := service.repository.Update(&user); err != nil {
+		if isUniqueConstraintError(err) {
+			return UserOutput{}, ErrEmailAlreadyTaken
+		}
+		return UserOutput{}, err
+	}
+
 	return UserOutput{UserModel: user, Token: common.GenToken(user.ID)}, nil
 }
 

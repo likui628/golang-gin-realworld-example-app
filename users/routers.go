@@ -9,4 +9,5 @@ func UsersRegister(router *gin.RouterGroup, handler UserHandler) {
 
 func UserRegister(router *gin.RouterGroup, handler UserHandler) {
 	router.GET("", handler.CurrentUser)
+	router.PUT("", handler.UpdateUser)
 }

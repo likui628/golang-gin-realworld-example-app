@@ -54,6 +54,33 @@ func (validator UserLoginValidator) Input() LoginUserInput {
 }
 
 func NewUserLoginValidator() UserLoginValidator {
-	userLoginValidator := UserLoginValidator{}
-	return userLoginValidator
+	loginValidator := UserLoginValidator{}
+	return loginValidator
+}
+
+type UpdateValidator struct {
+	User struct {
+		Username string `form:"username" json:"username" binding:"omitempty,min=4,max=255"`
+		Email    string `form:"email" json:"email" binding:"omitempty,email"`
+		Bio      string `form:"bio" json:"bio" binding:"omitempty,max=1024"`
+		Image    string `form:"image" json:"image" binding:"omitempty,url"`
+	} `json:"user"`
+}
+
+func (validator *UpdateValidator) Bind(c *gin.Context) error {
+	return common.Bind(c, validator)
+}
+
+func (validator UpdateValidator) Input() UpdateUserInput {
+	return UpdateUserInput{
+		Username: validator.User.Username,
+		Email:    validator.User.Email,
+		Bio:      validator.User.Bio,
+		Image:    validator.User.Image,
+	}
+}
+
+func NewUpdateValidator() UpdateValidator {
+	updateValidator := UpdateValidator{}
+	return updateValidator
 }

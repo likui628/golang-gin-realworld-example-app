@@ -68,3 +68,25 @@ func (handler UserHandler) CurrentUser(c *gin.Context) {
 		Token:     common.GenToken(currentUser.ID),
 	}}.Response()})
 }
+
+func (handler UserHandler) UpdateUser(c *gin.Context) {
+	currentUser, ok := CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+		return
+	}
+
+	updateValidator := NewUpdateValidator()
+	if err := updateValidator.Bind(c); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+		return
+	}
+
+	updatedUser, err := handler.service.UpdateUser(currentUser.ID, updateValidator.Input())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: updatedUser}.Response()})
+}
