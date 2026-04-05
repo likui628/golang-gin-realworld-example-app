@@ -23,8 +23,12 @@ func LoadEnv() {
 }
 
 func main() {
+	LoadEnv()
 	db := common.InitDatabase()
 	Migrate(db)
+	userRepository := users.NewUserRepository(db)
+	userService := users.NewUserService(userRepository)
+	userHandler := users.NewUserHandler(userService)
 
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -32,11 +36,13 @@ func main() {
 	} else {
 		defer sqlDB.Close()
 	}
-	LoadEnv()
 	r := gin.Default()
 
 	v1 := r.Group("/api")
-	users.UsersRegister(v1.Group("/users"))
+	users.UsersRegister(v1.Group("/users"), userHandler)
+
+	authed := v1.Group("/user")
+	authed.Use(users.AuthMiddleware(userService))
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")

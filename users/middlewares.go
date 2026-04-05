@@ -13,7 +13,7 @@ const currentUserContextKey = "current_user"
 
 var ErrUnauthorized = errors.New("unauthorized")
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(service UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authorizationHeader := c.GetHeader("Authorization")
 		tokenString, ok := extractToken(authorizationHeader)
@@ -28,7 +28,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userModel, err := newUserService().FindByID(userID)
+		userModel, err := service.FindByID(userID)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
 			return

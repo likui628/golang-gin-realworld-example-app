@@ -1,11 +1,7 @@
 package users
 
-import (
-	"github.com/likui628/golang-gin-realworld-example-app/common"
-)
-
 type UserSerializer struct {
-	User UserModel
+	User UserOutput
 }
 
 type UserResponse struct {
@@ -21,12 +17,11 @@ func (serializer UserSerializer) Response() UserResponse {
 	if serializer.User.Image != nil {
 		image = *serializer.User.Image
 	}
-	user := UserResponse{
+	return UserResponse{
 		Username: serializer.User.Username,
 		Email:    serializer.User.Email,
 		Bio:      serializer.User.Bio,
 		Image:    image,
-		Token:    common.GenToken(serializer.User.ID),
+		Token:    serializer.User.Token,
 	}
-	return user
 }

@@ -1,13 +1,17 @@
 /*
 Package users contains the user authentication and user-facing HTTP layer.
 
-models.go: GORM-backed user model and password helpers
+models.go: GORM-backed user model only
+
+password.go: password hashing and verification helpers
 
 repository.go: typed persistence boundary for user lookups and writes
 
 service.go: registration, login, and user retrieval business logic
 
-routers.go: Gin route registration and thin HTTP handlers
+handler.go: Gin HTTP handlers with injected service dependencies
+
+routers.go: Gin route registration only
 
 middlewares.go: JWT auth middleware and current-user context access
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/likui628/golang-gin-realworld-example-app/common"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +26,11 @@ type LoginUserInput struct {
 	Password string
 }
 
+type UserOutput struct {
+	UserModel
+	Token string
+}
+
 type UserService struct {
 	repository UserRepository
 }
@@ -33,47 +39,50 @@ func NewUserService(repository UserRepository) UserService {
 	return UserService{repository: repository}
 }
 
-func (service UserService) Register(input RegisterUserInput) (UserModel, error) {
+func (service UserService) Register(input RegisterUserInput) (UserOutput, error) {
 	_, err := service.repository.FindByEmail(input.Email)
 	if err == nil {
-		return UserModel{}, ErrEmailAlreadyTaken
+		return UserOutput{}, ErrEmailAlreadyTaken
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return UserModel{}, err
+		return UserOutput{}, err
+	}
+
+	passwordHash, err := hashPassword(input.Password)
+	if err != nil {
+		return UserOutput{}, err
 	}
 
 	user := UserModel{
-		Username: input.Username,
-		Email:    input.Email,
-		Bio:      input.Bio,
+		Username:     input.Username,
+		Email:        input.Email,
+		Bio:          input.Bio,
+		PasswordHash: passwordHash,
 	}
 	if input.Image != "" {
 		user.Image = &input.Image
 	}
-	if err := user.setPassword(input.Password); err != nil {
-		return UserModel{}, err
-	}
 	if err := service.repository.Create(&user); err != nil {
 		if isUniqueConstraintError(err) {
-			return UserModel{}, ErrEmailAlreadyTaken
+			return UserOutput{}, ErrEmailAlreadyTaken
 		}
-		return UserModel{}, err
+		return UserOutput{}, err
 	}
-	return user, nil
+	return UserOutput{UserModel: user, Token: common.GenToken(user.ID)}, nil
 }
 
-func (service UserService) Login(input LoginUserInput) (UserModel, error) {
+func (service UserService) Login(input LoginUserInput) (UserOutput, error) {
 	user, err := service.repository.FindByEmail(input.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return UserModel{}, ErrInvalidCredentials
+			return UserOutput{}, ErrInvalidCredentials
 		}
-		return UserModel{}, err
+		return UserOutput{}, err
 	}
-	if err := user.checkPassword(input.Password); err != nil {
-		return UserModel{}, ErrInvalidCredentials
+	if err := checkPassword(user.PasswordHash, input.Password); err != nil {
+		return UserOutput{}, ErrInvalidCredentials
 	}
-	return user, nil
+	return UserOutput{UserModel: user, Token: common.GenToken(user.ID)}, nil
 }
 
 func (service UserService) FindByID(id uint) (UserModel, error) {

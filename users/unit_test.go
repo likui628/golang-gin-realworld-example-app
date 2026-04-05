@@ -16,6 +16,14 @@ import (
 var image_url = "https://golang.org/doc/gopher/frontpage.png"
 var test_db *gorm.DB
 
+func newTestUserService() UserService {
+	return NewUserService(NewUserRepository(common.DB))
+}
+
+func newTestUserHandler() UserHandler {
+	return NewUserHandler(newTestUserService())
+}
+
 func setupTestDB(t *testing.T) {
 	t.Helper()
 	t.Setenv(common.JWTSecretEnvVar, "test-jwt-secret")
@@ -36,7 +44,7 @@ func performUserRegistrationRequest(t *testing.T, body string) *httptest.Respons
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	usersGroup := r.Group("/users")
-	UsersRegister(usersGroup)
+	UsersRegister(usersGroup, newTestUserHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -51,14 +59,15 @@ func performAuthenticatedRequest(t *testing.T, authorizationHeader string) *http
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	authorized := r.Group("/user")
-	authorized.Use(AuthMiddleware())
+	service := newTestUserService()
+	authorized.Use(AuthMiddleware(service))
 	authorized.GET("", func(c *gin.Context) {
 		currentUser, ok := CurrentUser(c)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, common.NewError("auth", ErrUnauthorized))
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: currentUser}.Response()})
+		c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: UserOutput{UserModel: currentUser}}.Response()})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/user", nil)
@@ -76,7 +85,7 @@ func performUserLoginRequest(t *testing.T, body string) *httptest.ResponseRecord
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	usersGroup := r.Group("/users")
-	UsersRegister(usersGroup)
+	UsersRegister(usersGroup, newTestUserHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/users/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -93,9 +102,11 @@ func seedUser(t *testing.T, username, email, password string) {
 		Email:    email,
 		Bio:      "hello",
 	}
-	if err := seed.setPassword(password); err != nil {
+	passwordHash, err := hashPassword(password)
+	if err != nil {
 		t.Fatalf("failed to hash password for seed user: %v", err)
 	}
+	seed.PasswordHash = passwordHash
 	if err := NewUserRepository(common.DB).Create(&seed); err != nil {
 		t.Fatalf("failed to seed user: %v", err)
 	}
