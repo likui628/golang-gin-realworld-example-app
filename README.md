@@ -7,6 +7,17 @@ This codebase was created to demonstrate a fully fledged fullstack application b
 
 https://github.com/gothinkster/golang-gin-realworld-example-app
 
+## Environment Config
+
+Environment variables can be set directly in your shell or via a .env file.
+Available environment variables:
+```
+PORT=8080                     # Server port (default: 8080)
+GIN_MODE=debug               # Gin mode: debug or release
+DB_PATH=./data/gorm.db       # SQLite database path (default: ./data/gorm.db)
+```
+
+See .env.example for a complete template.
 
 ## Testing
 From the project root, run:
