@@ -6,3 +6,24 @@
 This codebase was created to demonstrate a fully fledged fullstack application built with **Golang/Gin** including CRUD operations, authentication, routing, pagination, and more.
 
 https://github.com/gothinkster/golang-gin-realworld-example-app
+
+
+## Testing
+From the project root, run:
+```powershell
+go test ./...
+```
+
+## Test Coverage
+Current test coverage (2026):
+* Total: -
+* articles: -
+* users: -
+* common: -
+
+Run coverage report:
+
+```powershell
+go test -coverprofile='coverage.out' ./...
+go tool cover -func='coverage.out'
+```
