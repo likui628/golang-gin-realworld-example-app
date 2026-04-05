@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gosimple/slug"
 )
 
 const RandomPassword = "A String Very Very Very Random!!@##$!@#4" // #nosec G101
@@ -17,7 +18,7 @@ const RandomPassword = "A String Very Very Very Random!!@##$!@#4" // #nosec G101
 const JWTSecretEnvVar = "JWT_SECRET"
 
 var (
-	ErrInvalidToken    = errors.New("invalid token")
+	ErrInvalidToken     = errors.New("invalid token")
 	ErrMissingJWTSecret = errors.New("missing jwt secret")
 )
 
@@ -85,6 +86,10 @@ func ParseToken(tokenString string) (uint, error) {
 	default:
 		return 0, ErrInvalidToken
 	}
+}
+
+func GenerateSlug(title string) string {
+	return slug.Make(title)
 }
 
 type CommonError struct {
