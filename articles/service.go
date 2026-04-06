@@ -1,6 +1,8 @@
 package articles
 
-import "github.com/likui628/golang-gin-realworld-example-app/common"
+import (
+	"github.com/likui628/golang-gin-realworld-example-app/common"
+)
 
 type CreateArticleInput struct {
 	Title       string
@@ -36,5 +38,14 @@ func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleI
 		return ArticleModel{}, err
 	}
 
+	return article, nil
+}
+
+func (service *ArticleService) GetArticleBySlug(slug string) (ArticleModel, error) {
+	var article ArticleModel
+	article, err := service.repository.GetArticleBySlug(slug)
+	if err != nil {
+		return ArticleModel{}, err
+	}
 	return article, nil
 }

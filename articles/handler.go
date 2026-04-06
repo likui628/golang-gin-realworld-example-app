@@ -1,6 +1,7 @@
 package articles
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -36,4 +37,16 @@ func (handler *ArticleHandler) CreateArticle(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"article": ArticleSerializer{Article: article}.Response()})
+}
+
+func (handler *ArticleHandler) GetArticle(c *gin.Context) {
+	slug := c.Param("slug")
+	article, err := handler.service.GetArticleBySlug(slug)
+	log.Printf("article.Tags: %+v", article.Tags)
+	if err != nil {
+		c.JSON(http.StatusNotFound, common.NewError("article", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }

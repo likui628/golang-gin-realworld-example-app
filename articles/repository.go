@@ -5,6 +5,7 @@ import "gorm.io/gorm"
 type ArticleRepository interface {
 	Create(article *ArticleModel) error
 	FindOrCreateTags(tags []string) ([]TagModel, error)
+	GetArticleBySlug(slug string) (ArticleModel, error)
 }
 
 type GormRepository struct {
@@ -30,4 +31,12 @@ func (repository GormRepository) FindOrCreateTags(tags []string) ([]TagModel, er
 		result = append(result, t)
 	}
 	return result, nil
+}
+
+func (repository GormRepository) GetArticleBySlug(slug string) (ArticleModel, error) {
+	var article ArticleModel
+	if err := repository.db.Preload("Tags").Where("slug = ?", slug).First(&article).Error; err != nil {
+		return ArticleModel{}, err
+	}
+	return article, nil
 }

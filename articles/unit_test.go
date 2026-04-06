@@ -181,3 +181,105 @@ func TestCreateArticleUnauthorized(t *testing.T) {
 		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
 	}
 }
+
+func performGetArticleRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/articles/"+slug, nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestGetArticleBySlugSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article with tags
+	createBody := `{"article":{"title":"Test Article","description":"Test description","body":"Test body","tagList":["golang","testing"]}}`
+	createResp := performCreateArticleRequest(t, "Token "+common.GenToken(author.ID), createBody)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("failed to create article: status %d, body: %s", createResp.Code, createResp.Body.String())
+	}
+
+	var createPayload map[string]map[string]interface{}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("failed to parse create response: %v", err)
+	}
+
+	articleData, ok := createPayload["article"]
+	if !ok {
+		t.Fatalf("expected article in create response: %s", createResp.Body.String())
+	}
+
+	slug, ok := articleData["slug"].(string)
+	if !ok {
+		t.Fatalf("expected slug in article response, got: %v", articleData["slug"])
+	}
+
+	// Get the article by slug
+	getResp := performGetArticleRequest(t, slug, "Token "+common.GenToken(author.ID))
+
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, getResp.Code, getResp.Body.String())
+	}
+
+	var getPayload map[string]map[string]interface{}
+	if err := json.Unmarshal(getResp.Body.Bytes(), &getPayload); err != nil {
+		t.Fatalf("failed to parse get response: %v", err)
+	}
+
+	retrievedArticle, ok := getPayload["article"]
+	if !ok {
+		t.Fatalf("expected article in get response: %s", getResp.Body.String())
+	}
+
+	if retrievedArticle["title"] != "Test Article" {
+		t.Fatalf("expected title 'Test Article', got %v", retrievedArticle["title"])
+	}
+
+	if retrievedArticle["slug"] != slug {
+		t.Fatalf("expected slug %q, got %v", slug, retrievedArticle["slug"])
+	}
+
+	if retrievedArticle["description"] != "Test description" {
+		t.Fatalf("expected description 'Test description', got %v", retrievedArticle["description"])
+	}
+
+	if retrievedArticle["body"] != "Test body" {
+		t.Fatalf("expected body 'Test body', got %v", retrievedArticle["body"])
+	}
+
+	// Verify tags are returned
+	tagList, ok := retrievedArticle["tagList"].([]interface{})
+	if !ok {
+		t.Fatalf("expected tagList array, got: %v", retrievedArticle["tagList"])
+	}
+
+	if len(tagList) != 2 {
+		t.Fatalf("expected 2 tags, got %d: %v", len(tagList), tagList)
+	}
+
+	tagSet := map[string]bool{}
+	for _, tag := range tagList {
+		tagSet[tag.(string)] = true
+	}
+
+	if !tagSet["golang"] || !tagSet["testing"] {
+		t.Fatalf("expected tags 'golang' and 'testing', got %v", tagList)
+	}
+}
