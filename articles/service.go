@@ -11,6 +11,12 @@ type CreateArticleInput struct {
 	TagList     []string
 }
 
+type ArticleOutput struct {
+	ArticleModel
+	Favorited      bool
+	FavoritesCount int64
+}
+
 type ArticleService struct {
 	repository ArticleRepository
 }
@@ -19,10 +25,10 @@ func NewArticleService(repository ArticleRepository) ArticleService {
 	return ArticleService{repository: repository}
 }
 
-func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleInput) (ArticleModel, error) {
+func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleInput) (ArticleOutput, error) {
 	tags, err := service.repository.FindOrCreateTags(input.TagList)
 	if err != nil {
-		return ArticleModel{}, err
+		return ArticleOutput{}, err
 	}
 
 	article := ArticleModel{
@@ -35,17 +41,55 @@ func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleI
 	}
 
 	if err := service.repository.Create(&article); err != nil {
-		return ArticleModel{}, err
+		return ArticleOutput{}, err
 	}
 
-	return article, nil
+	return ArticleOutput{
+		ArticleModel:   article,
+		Favorited:      false,
+		FavoritesCount: 0,
+	}, nil
 }
 
-func (service *ArticleService) GetArticleBySlug(slug string) (ArticleModel, error) {
-	var article ArticleModel
+func (service *ArticleService) GetArticleBySlug(slug string) (ArticleOutput, error) {
 	article, err := service.repository.GetArticleBySlug(slug)
 	if err != nil {
-		return ArticleModel{}, err
+		return ArticleOutput{}, err
 	}
-	return article, nil
+	favorited, err := service.repository.IsFavorited(0, article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+	favoritesCount, err := service.repository.CountFavorites(article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	return ArticleOutput{
+		ArticleModel:   article,
+		Favorited:      favorited,
+		FavoritesCount: favoritesCount,
+	}, nil
+}
+
+func (service *ArticleService) FavoriteArticle(userId uint, slug string) (ArticleOutput, error) {
+	article, err := service.repository.FavoriteArticle(userId, slug)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	favorited, err := service.repository.IsFavorited(userId, article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+	favoritesCount, err := service.repository.CountFavorites(article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	return ArticleOutput{
+		ArticleModel:   article,
+		Favorited:      favorited,
+		FavoritesCount: favoritesCount,
+	}, nil
 }

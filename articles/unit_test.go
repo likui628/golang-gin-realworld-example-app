@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -94,6 +95,7 @@ func TestCreateArticleSuccess(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected article payload, got: %s", resp.Body.String())
 	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
 
 	if articlePayload["title"] != "My First Article" {
 		t.Fatalf("expected title My First Article, got %v", articlePayload["title"])
@@ -204,6 +206,185 @@ func performGetArticleRequest(t *testing.T, slug, authorizationHeader string) *h
 	return resp
 }
 
+func performFavoriteArticleRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodPost, "/articles/"+slug+"/favorite", nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func createArticleAndReturnSlug(t *testing.T, authorID uint, body string) string {
+	t.Helper()
+
+	resp := performCreateArticleRequest(t, "Token "+common.GenToken(authorID), body)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("failed to create article: status %d, body: %s", resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse create response: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article in create response: %s", resp.Body.String())
+	}
+
+	slug, ok := articlePayload["slug"].(string)
+	if !ok {
+		t.Fatalf("expected slug string in create response, got: %v", articlePayload["slug"])
+	}
+
+	return slug
+}
+
+func requireRealWorldStringField(t *testing.T, payload map[string]interface{}, field string) string {
+	t.Helper()
+
+	value, ok := payload[field]
+	if !ok {
+		t.Fatalf("expected %q field, got %v", field, payload)
+	}
+
+	text, ok := value.(string)
+	if !ok || text == "" {
+		t.Fatalf("expected non-empty string field %q, got %T(%v)", field, value, value)
+	}
+
+	return text
+}
+
+func requireRealWorldISOTimeField(t *testing.T, payload map[string]interface{}, field string) {
+	t.Helper()
+
+	value := requireRealWorldStringField(t, payload, field)
+	if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
+		t.Fatalf("expected %q to be RFC3339 timestamp, got %q: %v", field, value, err)
+	}
+}
+
+func requireRealWorldBoolField(t *testing.T, payload map[string]interface{}, field string) bool {
+	t.Helper()
+
+	value, ok := payload[field]
+	if !ok {
+		t.Fatalf("expected %q field, got %v", field, payload)
+	}
+
+	booleanValue, ok := value.(bool)
+	if !ok {
+		t.Fatalf("expected bool field %q, got %T(%v)", field, value, value)
+	}
+
+	return booleanValue
+}
+
+func requireRealWorldIntegerField(t *testing.T, payload map[string]interface{}, field string) int64 {
+	t.Helper()
+
+	value, ok := payload[field]
+	if !ok {
+		t.Fatalf("expected %q field, got %v", field, payload)
+	}
+
+	numberValue, ok := value.(float64)
+	if !ok {
+		t.Fatalf("expected numeric field %q, got %T(%v)", field, value, value)
+	}
+
+	integerValue := int64(numberValue)
+	if float64(integerValue) != numberValue {
+		t.Fatalf("expected integer field %q, got %v", field, numberValue)
+	}
+
+	return integerValue
+}
+
+func requireRealWorldStringArrayField(t *testing.T, payload map[string]interface{}, field string) []string {
+	t.Helper()
+
+	value, ok := payload[field]
+	if !ok {
+		t.Fatalf("expected %q field, got %v", field, payload)
+	}
+
+	rawItems, ok := value.([]interface{})
+	if !ok {
+		t.Fatalf("expected array field %q, got %T(%v)", field, value, value)
+	}
+
+	items := make([]string, 0, len(rawItems))
+	for _, rawItem := range rawItems {
+		item, ok := rawItem.(string)
+		if !ok {
+			t.Fatalf("expected %q items to be strings, got %T(%v)", field, rawItem, rawItem)
+		}
+		items = append(items, item)
+	}
+
+	return items
+}
+
+func requireRealWorldAuthorField(t *testing.T, payload map[string]interface{}, expectedUsername string) {
+	t.Helper()
+
+	value, ok := payload["author"]
+	if !ok {
+		t.Fatalf("expected \"author\" field, got %v", payload)
+	}
+
+	authorPayload, ok := value.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected author to be an object, got %T(%v)", value, value)
+	}
+
+	username := requireRealWorldStringField(t, authorPayload, "username")
+	if expectedUsername != "" && username != expectedUsername {
+		t.Fatalf("expected author.username %q, got %q", expectedUsername, username)
+	}
+
+	if _, ok := authorPayload["bio"]; !ok {
+		t.Fatalf("expected author.bio field, got %v", authorPayload)
+	}
+
+	if _, ok := authorPayload["image"]; !ok {
+		t.Fatalf("expected author.image field, got %v", authorPayload)
+	}
+
+	requireRealWorldBoolField(t, authorPayload, "following")
+}
+
+func requireRealWorldArticleResponse(t *testing.T, payload map[string]interface{}, expectedAuthor string) {
+	t.Helper()
+
+	requireRealWorldStringField(t, payload, "title")
+	requireRealWorldStringField(t, payload, "slug")
+	requireRealWorldStringField(t, payload, "description")
+	requireRealWorldStringField(t, payload, "body")
+	requireRealWorldISOTimeField(t, payload, "createdAt")
+	requireRealWorldISOTimeField(t, payload, "updatedAt")
+	requireRealWorldStringArrayField(t, payload, "tagList")
+	requireRealWorldBoolField(t, payload, "favorited")
+	requireRealWorldIntegerField(t, payload, "favoritesCount")
+	requireRealWorldAuthorField(t, payload, expectedAuthor)
+}
+
 func TestGetArticleBySlugSuccess(t *testing.T) {
 	setupArticleTestDB(t)
 	author := seedArticleAuthor(t)
@@ -247,6 +428,7 @@ func TestGetArticleBySlugSuccess(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected article in get response: %s", getResp.Body.String())
 	}
+	requireRealWorldArticleResponse(t, retrievedArticle, "articleuser")
 
 	if retrievedArticle["title"] != "Test Article" {
 		t.Fatalf("expected title 'Test Article', got %v", retrievedArticle["title"])
@@ -281,5 +463,150 @@ func TestGetArticleBySlugSuccess(t *testing.T) {
 
 	if !tagSet["golang"] || !tagSet["testing"] {
 		t.Fatalf("expected tags 'golang' and 'testing', got %v", tagList)
+	}
+}
+
+func TestGetArticleBySlugNotFound(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	resp := performGetArticleRequest(t, "missing-article", "Token "+common.GenToken(author.ID))
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["article"] != gorm.ErrRecordNotFound.Error() {
+		t.Fatalf("expected article error %q, got %v", gorm.ErrRecordNotFound.Error(), errorsPayload["article"])
+	}
+}
+
+func TestFavoriteArticleSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Favorite Me","description":"desc","body":"body","tagList":["go"]}}`)
+	resp := performFavoriteArticleRequest(t, slug, "Token "+common.GenToken(author.ID))
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", resp.Body.String())
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
+
+	if articlePayload["slug"] != slug {
+		t.Fatalf("expected slug %q, got %v", slug, articlePayload["slug"])
+	}
+
+	if articlePayload["favorited"] != true {
+		t.Fatalf("expected favorited=true, got %v", articlePayload["favorited"])
+	}
+
+	favoritesCount, ok := articlePayload["favoritesCount"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric favoritesCount, got %v", articlePayload["favoritesCount"])
+	}
+
+	if favoritesCount != 1 {
+		t.Fatalf("expected favoritesCount 1, got %v", favoritesCount)
+	}
+
+	var count int64
+	if err := common.DB.Model(&FavoriteModel{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count favorites: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected 1 favorite row, got %d", count)
+	}
+}
+
+func TestFavoriteArticleIsIdempotent(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Favorite Once","description":"desc","body":"body"}}`)
+	firstResp := performFavoriteArticleRequest(t, slug, "Token "+common.GenToken(author.ID))
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("expected first status %d, got %d, body: %s", http.StatusOK, firstResp.Code, firstResp.Body.String())
+	}
+
+	secondResp := performFavoriteArticleRequest(t, slug, "Token "+common.GenToken(author.ID))
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("expected second status %d, got %d, body: %s", http.StatusOK, secondResp.Code, secondResp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(secondResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", secondResp.Body.String())
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
+
+	favoritesCount, ok := articlePayload["favoritesCount"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric favoritesCount, got %v", articlePayload["favoritesCount"])
+	}
+
+	if favoritesCount != 1 {
+		t.Fatalf("expected favoritesCount to remain 1, got %v", favoritesCount)
+	}
+
+	var count int64
+	if err := common.DB.Model(&FavoriteModel{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count favorites: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected 1 favorite row after duplicate favorite, got %d", count)
+	}
+}
+
+func TestFavoriteArticleUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unauthorized Favorite","description":"desc","body":"body"}}`)
+	resp := performFavoriteArticleRequest(t, slug, "")
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
 	}
 }

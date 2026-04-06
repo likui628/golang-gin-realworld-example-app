@@ -50,3 +50,22 @@ func (handler *ArticleHandler) GetArticle(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }
+
+func (handler *ArticleHandler) FavoriteArticle(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+
+	slug := c.Param("slug")
+	log.Printf("%d - %s\n", currentUser.ID, slug)
+
+	article, err := handler.service.FavoriteArticle(currentUser.ID, slug)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
+}

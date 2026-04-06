@@ -72,6 +72,26 @@ func performAuthenticatedRequest(t *testing.T, authorizationHeader string) *http
 	return resp
 }
 
+func performUpdateUserRequest(t *testing.T, authorizationHeader, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	authorized := r.Group("/user")
+	service := newTestUserService()
+	authorized.Use(AuthMiddleware(service))
+	UserRegister(authorized, newTestUserHandler())
+
+	req := httptest.NewRequest(http.MethodPut, "/user", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func performUserLoginRequest(t *testing.T, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -395,6 +415,162 @@ func TestAuthMiddlewareSuccess(t *testing.T) {
 
 	if userPayload["token"] == "" {
 		t.Fatalf("expected non-empty token, got empty")
+	}
+}
+
+func TestCurrentUserUnauthorized(t *testing.T) {
+	setupTestDB(t)
+
+	resp := performAuthenticatedRequest(t, "")
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestUpdateUserSuccess(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "beforeuser", "before@example.com", "password123")
+
+	userModel, err := NewUserRepository(common.DB).FindByEmail("before@example.com")
+	if err != nil {
+		t.Fatalf("failed to load seeded user: %v", err)
+	}
+
+	body := `{"user":{"email":"after@example.com","username":"afteruser","bio":"updated bio","image":"https://example.com/avatar.png"}}`
+	resp := performUpdateUserRequest(t, "Token "+common.GenToken(userModel.ID), body)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	userPayload, ok := payload["user"]
+	if !ok {
+		t.Fatalf("expected user payload, got: %s", resp.Body.String())
+	}
+
+	if userPayload["email"] != "after@example.com" {
+		t.Fatalf("expected updated email, got %v", userPayload["email"])
+	}
+
+	if userPayload["username"] != "afteruser" {
+		t.Fatalf("expected updated username, got %v", userPayload["username"])
+	}
+
+	if userPayload["bio"] != "updated bio" {
+		t.Fatalf("expected updated bio, got %v", userPayload["bio"])
+	}
+
+	if userPayload["image"] != "https://example.com/avatar.png" {
+		t.Fatalf("expected updated image, got %v", userPayload["image"])
+	}
+
+	if userPayload["token"] == "" {
+		t.Fatalf("expected non-empty token, got empty")
+	}
+
+	updatedUser, err := NewUserRepository(common.DB).FindByID(userModel.ID)
+	if err != nil {
+		t.Fatalf("failed to reload updated user: %v", err)
+	}
+
+	if updatedUser.Email != "after@example.com" {
+		t.Fatalf("expected persisted email after@example.com, got %q", updatedUser.Email)
+	}
+
+	if updatedUser.Username != "afteruser" {
+		t.Fatalf("expected persisted username afteruser, got %q", updatedUser.Username)
+	}
+
+	if updatedUser.Bio != "updated bio" {
+		t.Fatalf("expected persisted bio updated bio, got %q", updatedUser.Bio)
+	}
+
+	if updatedUser.Image == nil || *updatedUser.Image != "https://example.com/avatar.png" {
+		t.Fatalf("expected persisted image, got %v", updatedUser.Image)
+	}
+}
+
+func TestUpdateUserValidationError(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "updateuser", "update@example.com", "password123")
+
+	userModel, err := NewUserRepository(common.DB).FindByEmail("update@example.com")
+	if err != nil {
+		t.Fatalf("failed to load seeded user: %v", err)
+	}
+
+	body := `{"user":{"email":"invalid-email","username":"abc","image":"not-a-url"}}`
+	resp := performUpdateUserRequest(t, "Token "+common.GenToken(userModel.ID), body)
+
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnprocessableEntity, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if _, exists := errorsPayload["Email"]; !exists {
+		t.Fatalf("expected Email validation error, got: %v", errorsPayload)
+	}
+
+	if _, exists := errorsPayload["Username"]; !exists {
+		t.Fatalf("expected Username validation error, got: %v", errorsPayload)
+	}
+
+	if _, exists := errorsPayload["Image"]; !exists {
+		t.Fatalf("expected Image validation error, got: %v", errorsPayload)
+	}
+}
+
+func TestUpdateUserUnauthorized(t *testing.T) {
+	setupTestDB(t)
+
+	body := `{"user":{"email":"after@example.com"}}`
+	resp := performUpdateUserRequest(t, "", body)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", ErrUnauthorized.Error(), errorsPayload["auth"])
 	}
 }
 

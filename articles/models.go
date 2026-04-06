@@ -28,7 +28,17 @@ type TagModel struct {
 	Tag string `gorm:"size:255;uniqueIndex;not null"`
 }
 
+type FavoriteModel struct {
+	ID uint `gorm:"primaryKey"`
+
+	UserId    uint            `gorm:"not null;uniqueIndex:idx_user_article"`
+	User      users.UserModel `gorm:"foreignKey:UserId"`
+	ArticleId uint            `gorm:"not null;uniqueIndex:idx_user_article"`
+	Article   ArticleModel    `gorm:"foreignKey:ArticleId"`
+}
+
 func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(&ArticleModel{})
 	db.AutoMigrate(&TagModel{})
+	db.AutoMigrate(&FavoriteModel{})
 }

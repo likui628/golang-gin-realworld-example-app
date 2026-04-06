@@ -6,6 +6,9 @@ type ArticleRepository interface {
 	Create(article *ArticleModel) error
 	FindOrCreateTags(tags []string) ([]TagModel, error)
 	GetArticleBySlug(slug string) (ArticleModel, error)
+	IsFavorited(userId uint, articleId uint) (bool, error)
+	CountFavorites(articleId uint) (int64, error)
+	FavoriteArticle(userId uint, slug string) (ArticleModel, error)
 }
 
 type GormRepository struct {
@@ -17,7 +20,11 @@ func NewArticleRepository(db *gorm.DB) ArticleRepository {
 }
 
 func (repository GormRepository) Create(article *ArticleModel) error {
-	return repository.db.Create(article).Error
+	if err := repository.db.Create(article).Error; err != nil {
+		return err
+	}
+	return repository.db.Preload("Tags").Preload("Author").First(article, article.ID).Error
+
 }
 
 func (repository GormRepository) FindOrCreateTags(tags []string) ([]TagModel, error) {
@@ -35,8 +42,45 @@ func (repository GormRepository) FindOrCreateTags(tags []string) ([]TagModel, er
 
 func (repository GormRepository) GetArticleBySlug(slug string) (ArticleModel, error) {
 	var article ArticleModel
-	if err := repository.db.Preload("Tags").Where("slug = ?", slug).First(&article).Error; err != nil {
+	if err := repository.db.Preload("Tags").Preload("Author").Where("slug = ?", slug).First(&article).Error; err != nil {
 		return ArticleModel{}, err
 	}
+	return article, nil
+}
+
+func (repository GormRepository) IsFavorited(userId uint, articleId uint) (bool, error) {
+	var favorite FavoriteModel
+	err := repository.db.Where("user_id = ? AND article_id = ?", userId, articleId).First(&favorite).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (repository GormRepository) CountFavorites(articleId uint) (int64, error) {
+	var count int64
+	if err := repository.db.Model(&FavoriteModel{}).Where("article_id = ?", articleId).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (repository GormRepository) FavoriteArticle(userId uint, slug string) (ArticleModel, error) {
+	var article ArticleModel
+	if err := repository.db.Preload("Tags").Preload("Author").Where("slug = ?", slug).First(&article).Error; err != nil {
+		return ArticleModel{}, err
+	}
+
+	favorite := FavoriteModel{
+		UserId:    userId,
+		ArticleId: article.ID,
+	}
+	if err := repository.db.Where(favorite).FirstOrCreate(&favorite).Error; err != nil {
+		return ArticleModel{}, err
+	}
+
 	return article, nil
 }
