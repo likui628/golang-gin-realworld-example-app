@@ -93,3 +93,25 @@ func (service *ArticleService) FavoriteArticle(userId uint, slug string) (Articl
 		FavoritesCount: favoritesCount,
 	}, nil
 }
+
+func (service *ArticleService) UnfavoriteArticle(userId uint, slug string) (ArticleOutput, error) {
+	article, err := service.repository.UnfavoriteArticle(userId, slug)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	favorited, err := service.repository.IsFavorited(userId, article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+	favoritesCount, err := service.repository.CountFavorites(article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	return ArticleOutput{
+		ArticleModel:   article,
+		Favorited:      favorited,
+		FavoritesCount: favoritesCount,
+	}, nil
+}

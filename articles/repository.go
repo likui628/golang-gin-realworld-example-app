@@ -9,6 +9,7 @@ type ArticleRepository interface {
 	IsFavorited(userId uint, articleId uint) (bool, error)
 	CountFavorites(articleId uint) (int64, error)
 	FavoriteArticle(userId uint, slug string) (ArticleModel, error)
+	UnfavoriteArticle(userId uint, slug string) (ArticleModel, error)
 }
 
 type GormRepository struct {
@@ -79,6 +80,20 @@ func (repository GormRepository) FavoriteArticle(userId uint, slug string) (Arti
 		ArticleId: article.ID,
 	}
 	if err := repository.db.Where(favorite).FirstOrCreate(&favorite).Error; err != nil {
+		return ArticleModel{}, err
+	}
+
+	return article, nil
+}
+
+func (repository GormRepository) UnfavoriteArticle(userId uint, slug string) (ArticleModel, error) {
+	article := ArticleModel{}
+	err := repository.db.Preload("Tags").Preload("Author").Where("slug = ?", slug).First(&article).Error
+	if err != nil {
+		return ArticleModel{}, err
+	}
+
+	if err := repository.db.Where("user_id = ? AND article_id = ?", userId, article.ID).Delete(&FavoriteModel{}).Error; err != nil {
 		return ArticleModel{}, err
 	}
 

@@ -228,6 +228,28 @@ func performFavoriteArticleRequest(t *testing.T, slug, authorizationHeader strin
 	return resp
 }
 
+func performUnfavoriteArticleRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodDelete, "/articles/"+slug+"/unfavorite", nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func createArticleAndReturnSlug(t *testing.T, authorID uint, body string) string {
 	t.Helper()
 
@@ -591,6 +613,142 @@ func TestFavoriteArticleUnauthorized(t *testing.T) {
 
 	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unauthorized Favorite","description":"desc","body":"body"}}`)
 	resp := performFavoriteArticleRequest(t, slug, "")
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestUnfavoriteArticleSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unfavorite Me","description":"desc","body":"body","tagList":["go"]}}`)
+	token := "Token " + common.GenToken(author.ID)
+
+	// First, favorite the article
+	favResp := performFavoriteArticleRequest(t, slug, token)
+	if favResp.Code != http.StatusOK {
+		t.Fatalf("expected favorite status %d, got %d, body: %s", http.StatusOK, favResp.Code, favResp.Body.String())
+	}
+
+	// Then unfavorite it
+	resp := performUnfavoriteArticleRequest(t, slug, token)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", resp.Body.String())
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
+
+	if articlePayload["slug"] != slug {
+		t.Fatalf("expected slug %q, got %v", slug, articlePayload["slug"])
+	}
+
+	if articlePayload["favorited"] != false {
+		t.Fatalf("expected favorited=false, got %v", articlePayload["favorited"])
+	}
+
+	favoritesCount, ok := articlePayload["favoritesCount"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric favoritesCount, got %v", articlePayload["favoritesCount"])
+	}
+
+	if favoritesCount != 0 {
+		t.Fatalf("expected favoritesCount 0, got %v", favoritesCount)
+	}
+
+	var count int64
+	if err := common.DB.Model(&FavoriteModel{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count favorites: %v", err)
+	}
+
+	if count != 0 {
+		t.Fatalf("expected 0 favorite rows, got %d", count)
+	}
+}
+
+func TestUnfavoriteArticleIsIdempotent(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unfavorite Once","description":"desc","body":"body"}}`)
+	token := "Token " + common.GenToken(author.ID)
+
+	// Unfavorite without ever favoriting (should be idempotent)
+	firstResp := performUnfavoriteArticleRequest(t, slug, token)
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("expected first status %d, got %d, body: %s", http.StatusOK, firstResp.Code, firstResp.Body.String())
+	}
+
+	secondResp := performUnfavoriteArticleRequest(t, slug, token)
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("expected second status %d, got %d, body: %s", http.StatusOK, secondResp.Code, secondResp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(secondResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", secondResp.Body.String())
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
+
+	if articlePayload["favorited"] != false {
+		t.Fatalf("expected favorited=false, got %v", articlePayload["favorited"])
+	}
+
+	favoritesCount, ok := articlePayload["favoritesCount"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric favoritesCount, got %v", articlePayload["favoritesCount"])
+	}
+
+	if favoritesCount != 0 {
+		t.Fatalf("expected favoritesCount to remain 0, got %v", favoritesCount)
+	}
+
+	var count int64
+	if err := common.DB.Model(&FavoriteModel{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count favorites: %v", err)
+	}
+
+	if count != 0 {
+		t.Fatalf("expected 0 favorite rows after duplicate unfavorite, got %d", count)
+	}
+}
+
+func TestUnfavoriteArticleUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unauthorized Unfavorite","description":"desc","body":"body"}}`)
+	resp := performUnfavoriteArticleRequest(t, slug, "")
 
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
