@@ -239,7 +239,7 @@ func performUnfavoriteArticleRequest(t *testing.T, slug, authorizationHeader str
 	articlesGroup.Use(users.AuthMiddleware(userService))
 	ArticlesRegister(articlesGroup, newTestArticleHandler())
 
-	req := httptest.NewRequest(http.MethodDelete, "/articles/"+slug+"/unfavorite", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/articles/"+slug+"/favorite", nil)
 	req.Header.Set("Content-Type", "application/json")
 	if authorizationHeader != "" {
 		req.Header.Set("Authorization", authorizationHeader)
