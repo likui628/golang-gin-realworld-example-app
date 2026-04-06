@@ -4,13 +4,17 @@ import "gorm.io/gorm"
 
 type ArticleRepository interface {
 	Create(article *ArticleModel) error
-	FindOrCreateTags(tags []string) ([]TagModel, error)
 	GetArticleBySlug(slug string) (ArticleModel, error)
+
 	IsFavorited(userId uint, articleId uint) (bool, error)
 	CountFavorites(articleId uint) (int64, error)
 	FavoriteArticle(userId uint, slug string) (ArticleModel, error)
 	UnfavoriteArticle(userId uint, slug string) (ArticleModel, error)
+
+	FindOrCreateTags(tags []string) ([]TagModel, error)
 	GetTags() ([]string, error)
+
+	CreateComment(comment *CommentModel) error
 }
 
 type GormRepository struct {
@@ -112,4 +116,11 @@ func (repository GormRepository) GetTags() ([]string, error) {
 		result[i] = tag.Tag
 	}
 	return result, nil
+}
+
+func (repository GormRepository) CreateComment(comment *CommentModel) error {
+	if err := repository.db.Create(comment).Error; err != nil {
+		return err
+	}
+	return repository.db.Preload("Author").Preload("Article").First(comment, comment.ID).Error
 }

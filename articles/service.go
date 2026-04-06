@@ -17,6 +17,14 @@ type ArticleOutput struct {
 	FavoritesCount int64
 }
 
+type CreateCommentInput struct {
+	Body string
+}
+
+type CommentOutput struct {
+	CommentModel
+}
+
 type ArticleService struct {
 	repository ArticleRepository
 }
@@ -118,4 +126,25 @@ func (service *ArticleService) UnfavoriteArticle(userId uint, slug string) (Arti
 
 func (service *ArticleService) GetTags() ([]string, error) {
 	return service.repository.GetTags()
+}
+
+func (service *ArticleService) CreateComment(userId uint, slug string, input CreateCommentInput) (CommentOutput, error) {
+	article, err := service.repository.GetArticleBySlug(slug)
+	if err != nil {
+		return CommentOutput{}, err
+	}
+
+	comment := CommentModel{
+		Body:      input.Body,
+		AuthorId:  userId,
+		ArticleId: article.ID,
+	}
+
+	if err := service.repository.CreateComment(&comment); err != nil {
+		return CommentOutput{}, err
+	}
+
+	return CommentOutput{
+		CommentModel: comment,
+	}, nil
 }

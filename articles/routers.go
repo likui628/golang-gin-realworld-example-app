@@ -7,6 +7,8 @@ func ArticlesRegister(router *gin.RouterGroup, handler ArticleHandler) {
 	router.GET("/:slug", handler.GetArticle)
 	router.POST("/:slug/favorite", handler.FavoriteArticle)
 	router.DELETE("/:slug/favorite", handler.UnfavoriteArticle)
+
+	router.POST("/:slug/comments", handler.CreateComment)
 }
 
 func TagsRegister(router *gin.RouterGroup, handler ArticleHandler) {

@@ -58,3 +58,30 @@ func (s ArticleSerializer) Response() ArticleResponse {
 		UpdatedAt: s.Article.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
 }
+
+type CommentSerializer struct {
+	Comment CommentOutput
+}
+
+type CommentResponse struct {
+	ID        uint           `json:"id"`
+	Body      string         `json:"body"`
+	Author    AuthorResponse `json:"author"`
+	CreatedAt string         `json:"createdAt"`
+	UpdatedAt string         `json:"updatedAt"`
+}
+
+func (s CommentSerializer) Response() CommentResponse {
+	return CommentResponse{
+		ID:   s.Comment.ID,
+		Body: s.Comment.Body,
+		Author: AuthorResponse{
+			Username:  s.Comment.Author.Username,
+			Bio:       s.Comment.Author.Bio,
+			Image:     imageToString(s.Comment.Author.Image),
+			Following: false, // TODO: set following status
+		},
+		CreatedAt: s.Comment.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: s.Comment.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+}

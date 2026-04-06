@@ -919,3 +919,199 @@ func TestGetTagsWithDuplicates(t *testing.T) {
 		}
 	}
 }
+
+func performCreateCommentRequest(t *testing.T, slug, authorizationHeader, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodPost, "/articles/"+slug+"/comments", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestCreateCommentSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Comment Me","description":"desc","body":"body"}}`)
+
+	// Create a comment
+	body := `{"comment":{"body":"Test comment body"}}`
+	resp := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), body)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusCreated, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	commentPayload, ok := payload["comment"]
+	if !ok {
+		t.Fatalf("expected comment payload, got: %s", resp.Body.String())
+	}
+
+	// Verify ID is an integer
+	id, ok := commentPayload["id"].(float64)
+	if !ok || id != float64(int(id)) {
+		t.Fatalf("expected integer id, got %v", commentPayload["id"])
+	}
+
+	// Verify body
+	if commentPayload["body"] != "Test comment body" {
+		t.Fatalf("expected body 'Test comment body', got %v", commentPayload["body"])
+	}
+
+	// Verify timestamps in ISO 8601 format
+	createdAt, ok := commentPayload["createdAt"].(string)
+	if !ok {
+		t.Fatalf("expected string createdAt, got %v", commentPayload["createdAt"])
+	}
+	if !isValidISO8601(createdAt) {
+		t.Fatalf("expected valid ISO 8601 createdAt, got %q", createdAt)
+	}
+
+	updatedAt, ok := commentPayload["updatedAt"].(string)
+	if !ok {
+		t.Fatalf("expected string updatedAt, got %v", commentPayload["updatedAt"])
+	}
+	if !isValidISO8601(updatedAt) {
+		t.Fatalf("expected valid ISO 8601 updatedAt, got %q", updatedAt)
+	}
+
+	// Verify author
+	author2, ok := commentPayload["author"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected author object, got %v", commentPayload["author"])
+	}
+
+	if author2["username"] != "articleuser" {
+		t.Fatalf("expected username 'articleuser', got %v", author2["username"])
+	}
+
+	// Verify comment persisted in database
+	var savedComment CommentModel
+	if err := common.DB.Preload("Author").Where("body = ?", "Test comment body").First(&savedComment).Error; err != nil {
+		t.Fatalf("expected comment persisted in db, query error: %v", err)
+	}
+
+	if savedComment.AuthorId != author.ID {
+		t.Fatalf("expected author id %d, got %d", author.ID, savedComment.AuthorId)
+	}
+}
+
+func TestCreateCommentValidationError(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"No Comment","description":"desc","body":"body"}}`)
+
+	// Try to create comment without body
+	body := `{"comment":{}}`
+	resp := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), body)
+
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnprocessableEntity, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if _, exists := errorsPayload["Body"]; !exists {
+		t.Fatalf("expected Body validation error, got: %v", errorsPayload)
+	}
+}
+
+func TestCreateCommentUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unauthorized Comment","description":"desc","body":"body"}}`)
+
+	// Try to create comment without authorization
+	body := `{"comment":{"body":"Test comment"}}`
+	resp := performCreateCommentRequest(t, slug, "", body)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestCreateCommentArticleNotFound(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Try to create comment on non-existent article
+	body := `{"comment":{"body":"Test comment"}}`
+	resp := performCreateCommentRequest(t, "non-existent-slug", "Token "+common.GenToken(author.ID), body)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusInternalServerError, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if _, exists := errorsPayload["database"]; !exists {
+		t.Fatalf("expected database error, got: %v", errorsPayload)
+	}
+}
+
+func isValidISO8601(timestamp string) bool {
+	// Simple validation for ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ
+	if len(timestamp) < 19 {
+		return false
+	}
+	// Check basic pattern - YYYY-MM-DDTHH:MM:SS
+	if timestamp[4] != '-' || timestamp[7] != '-' || timestamp[10] != 'T' ||
+		timestamp[13] != ':' || timestamp[16] != ':' {
+		return false
+	}
+	return true
+}

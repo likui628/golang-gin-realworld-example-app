@@ -97,3 +97,26 @@ func (handler *ArticleHandler) GetTags(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"tags": tags})
 }
+
+func (handler *ArticleHandler) CreateComment(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+
+	slug := c.Param("slug")
+
+	commentValidator := CreateCommentInputValidator{}
+	if err := commentValidator.Bind(c); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+		return
+	}
+	commentInput := commentValidator.Input()
+	comment, err := handler.service.CreateComment(currentUser.ID, slug, commentInput)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"comment": CommentSerializer{Comment: comment}.Response()})
+}

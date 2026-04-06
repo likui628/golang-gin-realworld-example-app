@@ -26,3 +26,19 @@ func (validator *CreateArticleInputValidator) Input() CreateArticleInput {
 		TagList:     validator.Article.TagList,
 	}
 }
+
+type CreateCommentInputValidator struct {
+	Comment struct {
+		Body string `json:"body" binding:"required"`
+	} `json:"comment"`
+}
+
+func (validator *CreateCommentInputValidator) Bind(c *gin.Context) error {
+	return common.Bind(c, validator)
+}
+
+func (validator *CreateCommentInputValidator) Input() CreateCommentInput {
+	return CreateCommentInput{
+		Body: validator.Comment.Body,
+	}
+}
