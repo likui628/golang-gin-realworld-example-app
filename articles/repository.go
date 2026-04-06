@@ -10,6 +10,7 @@ type ArticleRepository interface {
 	CountFavorites(articleId uint) (int64, error)
 	FavoriteArticle(userId uint, slug string) (ArticleModel, error)
 	UnfavoriteArticle(userId uint, slug string) (ArticleModel, error)
+	GetTags() ([]string, error)
 }
 
 type GormRepository struct {
@@ -98,4 +99,17 @@ func (repository GormRepository) UnfavoriteArticle(userId uint, slug string) (Ar
 	}
 
 	return article, nil
+}
+
+func (repository GormRepository) GetTags() ([]string, error) {
+	var tags []TagModel
+	if err := repository.db.Find(&tags).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]string, len(tags))
+	for i, tag := range tags {
+		result[i] = tag.Tag
+	}
+	return result, nil
 }

@@ -87,3 +87,13 @@ func (handler *ArticleHandler) UnfavoriteArticle(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }
+
+func (handler *ArticleHandler) GetTags(c *gin.Context) {
+	tags, err := handler.service.GetTags()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tags": tags})
+}

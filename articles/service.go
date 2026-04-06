@@ -115,3 +115,7 @@ func (service *ArticleService) UnfavoriteArticle(userId uint, slug string) (Arti
 		FavoritesCount: favoritesCount,
 	}, nil
 }
+
+func (service *ArticleService) GetTags() ([]string, error) {
+	return service.repository.GetTags()
+}

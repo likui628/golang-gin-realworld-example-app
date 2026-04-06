@@ -768,3 +768,154 @@ func TestUnfavoriteArticleUnauthorized(t *testing.T) {
 		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
 	}
 }
+
+func performGetTagsRequest(t *testing.T) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	tagsGroup := r.Group("/tags")
+	TagsRegister(tagsGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/tags", nil)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestGetTagsEmpty(t *testing.T) {
+	setupArticleTestDB(t)
+
+	resp := performGetTagsRequest(t)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	tagsPayload, ok := payload["tags"]
+	if !ok {
+		t.Fatalf("expected tags field in response, got: %s", resp.Body.String())
+	}
+
+	tags, ok := tagsPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected tags to be array, got: %v", tagsPayload)
+	}
+
+	if len(tags) != 0 {
+		t.Fatalf("expected empty tags list, got %d tags", len(tags))
+	}
+}
+
+func TestGetTagsSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create multiple articles with different tags
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article 1","description":"desc","body":"body","tagList":["golang","testing"]}}`)
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article 2","description":"desc","body":"body","tagList":["golang","docker"]}}`)
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article 3","description":"desc","body":"body","tagList":["kubernetes"]}}`)
+
+	resp := performGetTagsRequest(t)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	tagsPayload, ok := payload["tags"]
+	if !ok {
+		t.Fatalf("expected tags field in response, got: %s", resp.Body.String())
+	}
+
+	tags, ok := tagsPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected tags to be array, got: %v", tagsPayload)
+	}
+
+	// Should have 4 unique tags: golang, testing, docker, kubernetes
+	if len(tags) != 4 {
+		t.Fatalf("expected 4 tags, got %d: %v", len(tags), tags)
+	}
+
+	// Create a set to check all expected tags are present
+	tagSet := map[string]bool{}
+	for _, tag := range tags {
+		tagStr, ok := tag.(string)
+		if !ok {
+			t.Fatalf("expected tag to be string, got: %v", tag)
+		}
+		tagSet[tagStr] = true
+	}
+
+	expectedTags := []string{"golang", "testing", "docker", "kubernetes"}
+	for _, expectedTag := range expectedTags {
+		if !tagSet[expectedTag] {
+			t.Fatalf("expected tag %q not found in response, got: %v", expectedTag, tags)
+		}
+	}
+}
+
+func TestGetTagsWithDuplicates(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create articles with overlapping tags
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article A","description":"desc","body":"body","tagList":["go","rust","python"]}}`)
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article B","description":"desc","body":"body","tagList":["go","python","java"]}}`)
+
+	resp := performGetTagsRequest(t)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	tagsPayload, ok := payload["tags"]
+	if !ok {
+		t.Fatalf("expected tags field in response, got: %s", resp.Body.String())
+	}
+
+	tags, ok := tagsPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected tags to be array, got: %v", tagsPayload)
+	}
+
+	// Should have 4 unique tags: go, rust, python, java (duplicates removed)
+	if len(tags) != 4 {
+		t.Fatalf("expected 4 unique tags, got %d: %v", len(tags), tags)
+	}
+
+	// Verify all expected tags are present
+	tagSet := map[string]bool{}
+	for _, tag := range tags {
+		tagStr, ok := tag.(string)
+		if !ok {
+			t.Fatalf("expected tag to be string, got: %v", tag)
+		}
+		tagSet[tagStr] = true
+	}
+
+	expectedTags := []string{"go", "rust", "python", "java"}
+	for _, expectedTag := range expectedTags {
+		if !tagSet[expectedTag] {
+			t.Fatalf("expected tag %q not found in response, got: %v", expectedTag, tags)
+		}
+	}
+}
