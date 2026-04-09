@@ -8,6 +8,7 @@ func ArticlesRegister(router *gin.RouterGroup, handler ArticleHandler) {
 	router.DELETE("/:slug/favorite", handler.UnfavoriteArticle)
 
 	router.POST("/:slug/comments", handler.CreateComment)
+	router.DELETE("/:slug/comments/:id", handler.DeleteComment)
 }
 
 func ArticlePublicRegister(router *gin.RouterGroup, handler ArticleHandler) {

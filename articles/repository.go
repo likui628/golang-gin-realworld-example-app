@@ -16,6 +16,7 @@ type ArticleRepository interface {
 
 	CreateComment(comment *CommentModel) error
 	GetCommentsByArticleId(articleId uint) ([]CommentModel, error)
+	DeleteComment(commentId uint, authId uint) error
 }
 
 type GormRepository struct {
@@ -132,4 +133,11 @@ func (repository GormRepository) GetCommentsByArticleId(articleId uint) ([]Comme
 		return nil, err
 	}
 	return comments, nil
+}
+
+func (repository GormRepository) DeleteComment(commentId uint, authId uint) error {
+	if err := repository.db.Where("id = ? AND author_id = ?", commentId, authId).Delete(&CommentModel{}).Error; err != nil {
+		return err
+	}
+	return nil
 }

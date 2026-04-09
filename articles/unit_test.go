@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1114,4 +1115,373 @@ func isValidISO8601(timestamp string) bool {
 		return false
 	}
 	return true
+}
+
+func performGetCommentsRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	publicArticlesGroup := r.Group("/articles")
+	ArticlePublicRegister(publicArticlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/articles/"+slug+"/comments", nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func performDeleteCommentRequest(t *testing.T, slug, commentID, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodDelete, "/articles/"+slug+"/comments/"+commentID, nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestGetCommentsSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Article With Comments","description":"desc","body":"body"}}`)
+
+	// Create multiple comments
+	resp1 := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), `{"comment":{"body":"First comment"}}`)
+	if resp1.Code != http.StatusCreated {
+		t.Fatalf("failed to create first comment: status %d", resp1.Code)
+	}
+
+	resp2 := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), `{"comment":{"body":"Second comment"}}`)
+	if resp2.Code != http.StatusCreated {
+		t.Fatalf("failed to create second comment: status %d", resp2.Code)
+	}
+
+	resp3 := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), `{"comment":{"body":"Third comment"}}`)
+	if resp3.Code != http.StatusCreated {
+		t.Fatalf("failed to create third comment: status %d", resp3.Code)
+	}
+
+	// Get all comments
+	resp := performGetCommentsRequest(t, slug, "Token "+common.GenToken(author.ID))
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	commentsPayload, ok := payload["comments"]
+	if !ok {
+		t.Fatalf("expected comments field, got: %s", resp.Body.String())
+	}
+
+	comments, ok := commentsPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected comments to be array, got: %v", commentsPayload)
+	}
+
+	if len(comments) != 3 {
+		t.Fatalf("expected 3 comments, got %d", len(comments))
+	}
+
+	// Verify all comments have required fields
+	for i, commentInterface := range comments {
+		comment, ok := commentInterface.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected comment %d to be object, got %T", i, commentInterface)
+		}
+
+		// Verify ID is an integer
+		id, ok := comment["id"].(float64)
+		if !ok || id != float64(int(id)) {
+			t.Fatalf("expected integer id for comment %d, got %v", i, comment["id"])
+		}
+
+		// Verify body exists
+		_, ok = comment["body"].(string)
+		if !ok {
+			t.Fatalf("expected string body for comment %d, got %v", i, comment["body"])
+		}
+
+		// Verify author field exists
+		_, ok = comment["author"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected author object for comment %d, got %v", i, comment["author"])
+		}
+
+		// Verify timestamps
+		_, ok = comment["createdAt"].(string)
+		if !ok {
+			t.Fatalf("expected string createdAt for comment %d, got %v", i, comment["createdAt"])
+		}
+
+		_, ok = comment["updatedAt"].(string)
+		if !ok {
+			t.Fatalf("expected string updatedAt for comment %d, got %v", i, comment["updatedAt"])
+		}
+	}
+
+	// Verify comment order and content
+	comment1, _ := comments[0].(map[string]interface{})
+	comment2, _ := comments[1].(map[string]interface{})
+	comment3, _ := comments[2].(map[string]interface{})
+
+	if comment1["body"] != "First comment" {
+		t.Fatalf("expected first comment body 'First comment', got %v", comment1["body"])
+	}
+
+	if comment2["body"] != "Second comment" {
+		t.Fatalf("expected second comment body 'Second comment', got %v", comment2["body"])
+	}
+
+	if comment3["body"] != "Third comment" {
+		t.Fatalf("expected third comment body 'Third comment', got %v", comment3["body"])
+	}
+}
+
+func TestGetCommentsEmpty(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article without comments
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"No Comments","description":"desc","body":"body"}}`)
+
+	// Get comments for article with no comments
+	resp := performGetCommentsRequest(t, slug, "Token "+common.GenToken(author.ID))
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	commentsPayload, ok := payload["comments"]
+	if !ok {
+		t.Fatalf("expected comments field, got: %s", resp.Body.String())
+	}
+
+	// Comments can be nil or an empty array
+	if commentsPayload != nil {
+		comments, ok := commentsPayload.([]interface{})
+		if !ok {
+			t.Fatalf("expected comments to be array, got: %T", commentsPayload)
+		}
+
+		if len(comments) != 0 {
+			t.Fatalf("expected 0 comments, got %d", len(comments))
+		}
+	}
+}
+
+func TestGetCommentsArticleNotFound(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Get comments for non-existent article
+	resp := performGetCommentsRequest(t, "non-existent-article", "Token "+common.GenToken(author.ID))
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusInternalServerError, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if _, exists := errorsPayload["database"]; !exists {
+		t.Fatalf("expected database error, got: %v", errorsPayload)
+	}
+}
+
+func TestDeleteCommentSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article and a comment
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Delete Comment","description":"desc","body":"body"}}`)
+
+	// Create a comment
+	createResp := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), `{"comment":{"body":"Comment to delete"}}`)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("failed to create comment: status %d", createResp.Code)
+	}
+
+	var createPayload map[string]map[string]interface{}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("failed to parse create response json: %v", err)
+	}
+
+	commentPayload, ok := createPayload["comment"]
+	if !ok {
+		t.Fatalf("expected comment payload in create response, got: %s", createResp.Body.String())
+	}
+
+	commentID := int64(commentPayload["id"].(float64))
+	commentIDStr := strconv.FormatInt(commentID, 10)
+
+	// Verify comment exists before deletion
+	getRes := performGetCommentsRequest(t, slug, "Token "+common.GenToken(author.ID))
+	var getPayload map[string]interface{}
+	if err := json.Unmarshal(getRes.Body.Bytes(), &getPayload); err != nil {
+		t.Fatalf("failed to parse get response json: %v", err)
+	}
+
+	commentsBeforeDelete := getPayload["comments"]
+	if commentsBeforeDelete != nil {
+		comments := commentsBeforeDelete.([]interface{})
+		if len(comments) != 1 {
+			t.Fatalf("expected 1 comment before deletion, got %d", len(comments))
+		}
+	}
+
+	// Delete the comment
+	deleteResp := performDeleteCommentRequest(t, slug, commentIDStr, "Token "+common.GenToken(author.ID))
+
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNoContent, deleteResp.Code, deleteResp.Body.String())
+	}
+
+	// Verify comment is deleted
+	var emptyCommentModel CommentModel
+	if err := common.DB.First(&emptyCommentModel, commentID).Error; err == nil {
+		t.Fatalf("expected comment to be deleted from database, but found: %v", emptyCommentModel)
+	}
+
+	// Verify comment list is now empty
+	getAfterDeleteRes := performGetCommentsRequest(t, slug, "Token "+common.GenToken(author.ID))
+	var getAfterDeletePayload map[string]interface{}
+	if err := json.Unmarshal(getAfterDeleteRes.Body.Bytes(), &getAfterDeletePayload); err != nil {
+		t.Fatalf("failed to parse get response json after delete: %v", err)
+	}
+
+	commentsAfterDelete := getAfterDeletePayload["comments"]
+	if commentsAfterDelete != nil {
+		comments := commentsAfterDelete.([]interface{})
+		if len(comments) != 0 {
+			t.Fatalf("expected 0 comments after deletion, got %d", len(comments))
+		}
+	}
+}
+
+func TestDeleteCommentUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article and a comment
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Unauthorized Delete","description":"desc","body":"body"}}`)
+
+	createResp := performCreateCommentRequest(t, slug, "Token "+common.GenToken(author.ID), `{"comment":{"body":"Comment"}}`)
+
+	var createPayload map[string]map[string]interface{}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("failed to parse create response json: %v", err)
+	}
+
+	commentPayload, ok := createPayload["comment"]
+	if !ok {
+		t.Fatalf("expected comment payload in create response, got: %s", createResp.Body.String())
+	}
+
+	commentID := int64(commentPayload["id"].(float64))
+	commentIDStr := strconv.FormatInt(commentID, 10)
+
+	// Try to delete without authorization
+	deleteResp := performDeleteCommentRequest(t, slug, commentIDStr, "")
+
+	if deleteResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, deleteResp.Code, deleteResp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(deleteResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", deleteResp.Body.String())
+	}
+
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestDeleteCommentInvalidID(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Invalid ID","description":"desc","body":"body"}}`)
+
+	// Try to delete comment with invalid ID
+	deleteResp := performDeleteCommentRequest(t, slug, "invalid-id", "Token "+common.GenToken(author.ID))
+
+	if deleteResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusBadRequest, deleteResp.Code, deleteResp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(deleteResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", deleteResp.Body.String())
+	}
+
+	if _, exists := errorsPayload["invalid_id"]; !exists {
+		t.Fatalf("expected invalid_id error, got: %v", errorsPayload)
+	}
+}
+
+func TestDeleteCommentNotFound(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	// Create an article
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Delete Non-existent","description":"desc","body":"body"}}`)
+
+	// Try to delete non-existent comment (idempotent - returns success without error)
+	deleteResp := performDeleteCommentRequest(t, slug, "9999", "Token "+common.GenToken(author.ID))
+
+	// The implementation allows idempotent deletes - returns 204 even if comment doesn't exist
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNoContent, deleteResp.Code, deleteResp.Body.String())
+	}
 }

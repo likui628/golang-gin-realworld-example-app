@@ -164,3 +164,10 @@ func (service *ArticleService) GetCommentsByArticleSlug(slug string) ([]CommentO
 	}
 	return commentOutputs, nil
 }
+
+func (service *ArticleService) DeleteComment(commentId uint, userId uint) error {
+	if err := service.repository.DeleteComment(commentId, userId); err != nil {
+		return err
+	}
+	return nil
+}

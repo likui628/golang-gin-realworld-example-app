@@ -3,6 +3,7 @@ package articles
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/likui628/golang-gin-realworld-example-app/common"
@@ -133,4 +134,23 @@ func (handler *ArticleHandler) GetComments(c *gin.Context) {
 		commentResponses = append(commentResponses, CommentSerializer{Comment: comment}.Response())
 	}
 	c.JSON(http.StatusOK, gin.H{"comments": commentResponses})
+}
+
+func (handler *ArticleHandler) DeleteComment(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+	commentId := c.Param("id")
+	commentIdUint, err := strconv.ParseUint(commentId, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, common.NewError("invalid_id", err))
+		return
+	}
+	if err := handler.service.DeleteComment(uint(commentIdUint), currentUser.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
 }
