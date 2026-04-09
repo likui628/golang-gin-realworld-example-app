@@ -15,6 +15,7 @@ type ArticleRepository interface {
 	GetTags() ([]string, error)
 
 	CreateComment(comment *CommentModel) error
+	GetCommentsByArticleId(articleId uint) ([]CommentModel, error)
 }
 
 type GormRepository struct {
@@ -123,4 +124,12 @@ func (repository GormRepository) CreateComment(comment *CommentModel) error {
 		return err
 	}
 	return repository.db.Preload("Author").Preload("Article").First(comment, comment.ID).Error
+}
+
+func (repository GormRepository) GetCommentsByArticleId(articleId uint) ([]CommentModel, error) {
+	var comments []CommentModel
+	if err := repository.db.Preload("Author").Where("article_id = ?", articleId).Find(&comments).Error; err != nil {
+		return nil, err
+	}
+	return comments, nil
 }

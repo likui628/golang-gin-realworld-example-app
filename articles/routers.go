@@ -4,11 +4,15 @@ import "github.com/gin-gonic/gin"
 
 func ArticlesRegister(router *gin.RouterGroup, handler ArticleHandler) {
 	router.POST("", handler.CreateArticle)
-	router.GET("/:slug", handler.GetArticle)
 	router.POST("/:slug/favorite", handler.FavoriteArticle)
 	router.DELETE("/:slug/favorite", handler.UnfavoriteArticle)
 
 	router.POST("/:slug/comments", handler.CreateComment)
+}
+
+func ArticlePublicRegister(router *gin.RouterGroup, handler ArticleHandler) {
+	router.GET("/:slug", handler.GetArticle)
+	router.GET("/:slug/comments", handler.GetComments)
 }
 
 func TagsRegister(router *gin.RouterGroup, handler ArticleHandler) {

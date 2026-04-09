@@ -148,3 +148,19 @@ func (service *ArticleService) CreateComment(userId uint, slug string, input Cre
 		CommentModel: comment,
 	}, nil
 }
+
+func (service *ArticleService) GetCommentsByArticleSlug(slug string) ([]CommentOutput, error) {
+	article, err := service.repository.GetArticleBySlug(slug)
+	if err != nil {
+		return nil, err
+	}
+	comments, err := service.repository.GetCommentsByArticleId(article.ID)
+	if err != nil {
+		return nil, err
+	}
+	var commentOutputs []CommentOutput
+	for _, comment := range comments {
+		commentOutputs = append(commentOutputs, CommentOutput{CommentModel: comment})
+	}
+	return commentOutputs, nil
+}

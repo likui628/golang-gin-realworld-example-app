@@ -120,3 +120,17 @@ func (handler *ArticleHandler) CreateComment(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, gin.H{"comment": CommentSerializer{Comment: comment}.Response()})
 }
+
+func (handler *ArticleHandler) GetComments(c *gin.Context) {
+	slug := c.Param("slug")
+	comments, err := handler.service.GetCommentsByArticleSlug(slug)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	var commentResponses []CommentResponse
+	for _, comment := range comments {
+		commentResponses = append(commentResponses, CommentSerializer{Comment: comment}.Response())
+	}
+	c.JSON(http.StatusOK, gin.H{"comments": commentResponses})
+}
