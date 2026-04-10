@@ -116,9 +116,28 @@ func performGetProfileRequest(t *testing.T, authorizationHeader string, uid uint
 	profiles := r.Group("/profiles")
 	service := newTestUserService()
 	profiles.Use(OptionalAuthMiddleware(service))
-	ProfileRegister(profiles, newTestUserHandler())
+	ProfilePublicRegister(profiles, newTestUserHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/profiles/"+strconv.FormatUint(uint64(uid), 10), nil)
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
+func performFollowUserRequest(t *testing.T, authorizationHeader string, uid string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	profiles := r.Group("/profiles")
+	service := newTestUserService()
+	profiles.Use(OptionalAuthMiddleware(service))
+	ProfileRegister(profiles, newTestUserHandler())
+
+	req := httptest.NewRequest(http.MethodPost, "/profiles/"+uid+"/follow", nil)
 	if authorizationHeader != "" {
 		req.Header.Set("Authorization", authorizationHeader)
 	}
@@ -296,6 +315,134 @@ func TestGetProfileWithAuthFollowingTrue(t *testing.T) {
 
 	if following, ok := profilePayload["following"].(bool); !ok || !following {
 		t.Fatalf("expected following to be true, got %v", profilePayload["following"])
+	}
+}
+
+func TestFollowUserSuccess(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+
+	repository := NewUserRepository(common.DB)
+	viewer, err := repository.FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+	target, err := repository.FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+
+	resp := performFollowUserRequest(t, "Token "+common.GenToken(viewer.ID), strconv.FormatUint(uint64(target.ID), 10))
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	profilePayload, ok := payload["profile"]
+	if !ok {
+		t.Fatalf("expected profile payload, got: %s", resp.Body.String())
+	}
+
+	if profilePayload["username"] != "celeb_123" {
+		t.Fatalf("expected followed username celeb_123, got %v", profilePayload["username"])
+	}
+
+	if following, ok := profilePayload["following"].(bool); !ok || !following {
+		t.Fatalf("expected following to be true, got %v", profilePayload["following"])
+	}
+
+	isFollowing, err := repository.IsFollowing(viewer.ID, target.ID)
+	if err != nil {
+		t.Fatalf("failed checking follow relationship: %v", err)
+	}
+	if !isFollowing {
+		t.Fatalf("expected follow relationship to be persisted")
+	}
+}
+
+func TestFollowUserIsIdempotent(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+
+	repository := NewUserRepository(common.DB)
+	viewer, err := repository.FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+	target, err := repository.FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+
+	uid := strconv.FormatUint(uint64(target.ID), 10)
+	firstResp := performFollowUserRequest(t, "Token "+common.GenToken(viewer.ID), uid)
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("expected first follow status %d, got %d, body: %s", http.StatusOK, firstResp.Code, firstResp.Body.String())
+	}
+
+	secondResp := performFollowUserRequest(t, "Token "+common.GenToken(viewer.ID), uid)
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("expected second follow status %d, got %d, body: %s", http.StatusOK, secondResp.Code, secondResp.Body.String())
+	}
+
+	var count int64
+	if err := common.DB.Model(&FollowModel{}).Where("follower_id = ? AND followed_id = ?", viewer.ID, target.ID).Count(&count).Error; err != nil {
+		t.Fatalf("failed counting follow rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one follow row after duplicate follow, got %d", count)
+	}
+}
+
+func TestFollowUserUnauthorized(t *testing.T) {
+	setupTestDB(t)
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+	target, err := NewUserRepository(common.DB).FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+
+	resp := performFollowUserRequest(t, "", strconv.FormatUint(uint64(target.ID), 10))
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+}
+
+func TestFollowUserInvalidUID(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	viewer, err := NewUserRepository(common.DB).FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+
+	resp := performFollowUserRequest(t, "Token "+common.GenToken(viewer.ID), "invalid-uid")
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+}
+
+func TestFollowUserNotFound(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	viewer, err := NewUserRepository(common.DB).FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+
+	resp := performFollowUserRequest(t, "Token "+common.GenToken(viewer.ID), "999999")
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNotFound, resp.Code, resp.Body.String())
 	}
 }
 

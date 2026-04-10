@@ -156,3 +156,22 @@ func (service UserService) GetProfile(uid uint, currentUserID *uint) (UserProfil
 
 	return UserProfileOutput{UserModel: profile, Following: following}, nil
 }
+
+func (service UserService) FollowUser(followerID uint, followedID uint) (UserProfileOutput, error) {
+	if followerID == followedID {
+		return UserProfileOutput{}, errors.New("cannot follow yourself")
+	}
+	profile, err := service.repository.FindByID(followedID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return UserProfileOutput{}, ErrUserNotFound
+		}
+		return UserProfileOutput{}, err
+	}
+
+	if err := service.repository.FollowUser(followerID, followedID); err != nil {
+		return UserProfileOutput{}, err
+	}
+
+	return UserProfileOutput{UserModel: profile, Following: true}, nil
+}

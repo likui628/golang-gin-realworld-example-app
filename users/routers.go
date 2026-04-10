@@ -13,8 +13,9 @@ func UserRegister(router *gin.RouterGroup, handler UserHandler) {
 }
 
 func ProfileRegister(router *gin.RouterGroup, handler UserHandler) {
-	router.GET("/:uid", handler.GetProfile)
+	router.POST("/:uid/follow", handler.FollowUser)
 }
 
 func ProfilePublicRegister(router *gin.RouterGroup, handler UserHandler) {
+	router.GET("/:uid", handler.GetProfile)
 }

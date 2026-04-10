@@ -8,6 +8,7 @@ type UserRepository interface {
 	FindByEmail(email string) (UserModel, error)
 	FindByID(id uint) (UserModel, error)
 	IsFollowing(followerID uint, followedID uint) (bool, error)
+	FollowUser(followerID uint, followedID uint) error
 }
 
 type GormRepository struct {
@@ -49,4 +50,12 @@ func (repository GormRepository) IsFollowing(followerID uint, followedID uint) (
 	}
 
 	return true, nil
+}
+
+func (repository GormRepository) FollowUser(followerID uint, followedID uint) error {
+	follow := FollowModel{
+		FollowerId: followerID,
+		FollowedId: followedID,
+	}
+	return repository.db.FirstOrCreate(&follow, FollowModel{FollowerId: followerID, FollowedId: followedID}).Error
 }
