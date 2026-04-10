@@ -7,6 +7,7 @@ type UserRepository interface {
 	Update(user *UserModel) error
 	FindByEmail(email string) (UserModel, error)
 	FindByID(id uint) (UserModel, error)
+	IsFollowing(followerID uint, followedID uint) (bool, error)
 }
 
 type GormRepository struct {
@@ -35,4 +36,17 @@ func (repository GormRepository) FindByID(id uint) (UserModel, error) {
 	var user UserModel
 	err := repository.db.First(&user, id).Error
 	return user, err
+}
+
+func (repository GormRepository) IsFollowing(followerID uint, followedID uint) (bool, error) {
+	var follow FollowModel
+	err := repository.db.Where("follower_id = ? AND followed_id = ?", followerID, followedID).First(&follow).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }

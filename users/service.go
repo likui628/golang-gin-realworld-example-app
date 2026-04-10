@@ -11,6 +11,8 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("Not Registered email or invalid password")
 	ErrEmailAlreadyTaken  = errors.New("has already been taken")
+	ErrUserNotFound       = errors.New("User not found")
+	ErrInvalidID          = errors.New("Invalid ID")
 )
 
 type RegisterUserInput struct {
@@ -36,6 +38,11 @@ type UpdateUserInput struct {
 type UserOutput struct {
 	UserModel
 	Token string
+}
+
+type UserProfileOutput struct {
+	UserModel
+	Following bool
 }
 
 type UserService struct {
@@ -128,4 +135,24 @@ func (service UserService) FindByID(id uint) (UserModel, error) {
 func isUniqueConstraintError(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "unique constraint") || strings.Contains(message, "duplicated key")
+}
+
+func (service UserService) GetProfile(uid uint, currentUserID *uint) (UserProfileOutput, error) {
+	profile, err := service.repository.FindByID(uid)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return UserProfileOutput{}, ErrUserNotFound
+		}
+		return UserProfileOutput{}, err
+	}
+
+	following := false
+	if currentUserID != nil && *currentUserID != profile.ID {
+		following, err = service.repository.IsFollowing(*currentUserID, profile.ID)
+		if err != nil {
+			return UserProfileOutput{}, err
+		}
+	}
+
+	return UserProfileOutput{UserModel: profile, Following: following}, nil
 }

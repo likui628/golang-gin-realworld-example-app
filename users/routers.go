@@ -11,3 +11,10 @@ func UserRegister(router *gin.RouterGroup, handler UserHandler) {
 	router.GET("", handler.CurrentUser)
 	router.PUT("", handler.UpdateUser)
 }
+
+func ProfileRegister(router *gin.RouterGroup, handler UserHandler) {
+	router.GET("/:uid", handler.GetProfile)
+}
+
+func ProfilePublicRegister(router *gin.RouterGroup, handler UserHandler) {
+}

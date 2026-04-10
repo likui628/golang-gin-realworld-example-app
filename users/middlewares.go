@@ -39,6 +39,35 @@ func AuthMiddleware(service UserService) gin.HandlerFunc {
 	}
 }
 
+func OptionalAuthMiddleware(service UserService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authorizationHeader := c.GetHeader("Authorization")
+		if authorizationHeader == "" {
+			c.Next()
+			return
+		}
+
+		tokenString, ok := extractToken(authorizationHeader)
+		if !ok {
+			c.Next()
+			return
+		}
+
+		userID, err := common.ParseToken(tokenString)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		userModel, err := service.FindByID(userID)
+		if err == nil {
+			c.Set(currentUserContextKey, userModel)
+		}
+
+		c.Next()
+	}
+}
+
 func CurrentUser(c *gin.Context) (UserModel, bool) {
 	value, exists := c.Get(currentUserContextKey)
 	if !exists {

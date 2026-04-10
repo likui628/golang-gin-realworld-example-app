@@ -52,6 +52,10 @@ func setupRouter(db *gorm.DB) *gin.Engine {
 	tags := v1.Group("/tags")
 	articles.TagsRegister(tags, articleHandler)
 
+	profiles := v1.Group("/profiles")
+	profiles.Use(users.OptionalAuthMiddleware(userService))
+	users.ProfileRegister(profiles, userHandler)
+
 	return r
 }
 

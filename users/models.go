@@ -11,6 +11,15 @@ type UserModel struct {
 	PasswordHash string  `gorm:"column:password;not null"`
 }
 
+type FollowModel struct {
+	ID         uint      `gorm:"primaryKey"`
+	FollowerId uint      `gorm:"not null;uniqueIndex:idx_follower_followed"`
+	Follower   UserModel `gorm:"foreignKey:FollowerId"`
+	FollowedId uint      `gorm:"not null;uniqueIndex:idx_follower_followed"`
+	Followed   UserModel `gorm:"foreignKey:FollowedId"`
+}
+
 func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(&UserModel{})
+	db.AutoMigrate(&FollowModel{})
 }

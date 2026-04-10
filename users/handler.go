@@ -3,6 +3,7 @@ package users
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/likui628/golang-gin-realworld-example-app/common"
@@ -89,4 +90,30 @@ func (handler UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"user": UserSerializer{User: updatedUser}.Response()})
+}
+
+func (handler UserHandler) GetProfile(c *gin.Context) {
+	uid := c.Param("uid")
+	uidUint, err := strconv.ParseUint(uid, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, common.NewError("profile", ErrInvalidID))
+		return
+	}
+
+	var currentUserID *uint
+	if currentUser, ok := CurrentUser(c); ok {
+		currentUserID = &currentUser.ID
+	}
+
+	profile, err := handler.service.GetProfile(uint(uidUint), currentUserID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, common.NewError("profile", err))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"profile": ProfileSerializer{Profile: profile}.Response()})
 }

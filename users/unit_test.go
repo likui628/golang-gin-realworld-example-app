@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -107,6 +108,25 @@ func performUserLoginRequest(t *testing.T, body string) *httptest.ResponseRecord
 	return resp
 }
 
+func performGetProfileRequest(t *testing.T, authorizationHeader string, uid uint) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	profiles := r.Group("/profiles")
+	service := newTestUserService()
+	profiles.Use(OptionalAuthMiddleware(service))
+	ProfileRegister(profiles, newTestUserHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/profiles/"+strconv.FormatUint(uint64(uid), 10), nil)
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func seedUser(t *testing.T, username, email, password string) {
 	t.Helper()
 
@@ -122,6 +142,160 @@ func seedUser(t *testing.T, username, email, password string) {
 	seed.PasswordHash = passwordHash
 	if err := NewUserRepository(common.DB).Create(&seed); err != nil {
 		t.Fatalf("failed to seed user: %v", err)
+	}
+}
+
+func seedProfileUser(t *testing.T, username, email, password string) {
+	t.Helper()
+
+	seed := UserModel{
+		Username: username,
+		Email:    email,
+	}
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		t.Fatalf("failed to hash password for profile seed user: %v", err)
+	}
+	seed.PasswordHash = passwordHash
+	if err := NewUserRepository(common.DB).Create(&seed); err != nil {
+		t.Fatalf("failed to seed profile user: %v", err)
+	}
+}
+
+func seedFollow(t *testing.T, followerID uint, followedID uint) {
+	t.Helper()
+
+	follow := FollowModel{
+		FollowerId: followerID,
+		FollowedId: followedID,
+	}
+	if err := common.DB.Create(&follow).Error; err != nil {
+		t.Fatalf("failed to seed follow relation: %v", err)
+	}
+}
+
+func TestGetProfileWithoutAuth(t *testing.T) {
+	setupTestDB(t)
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+	target, err := NewUserRepository(common.DB).FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+
+	resp := performGetProfileRequest(t, "", target.ID)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	profilePayload, ok := payload["profile"]
+	if !ok {
+		t.Fatalf("expected profile payload, got: %s", resp.Body.String())
+	}
+
+	if profilePayload["username"] != "celeb_123" {
+		t.Fatalf("expected username celeb_123, got %v", profilePayload["username"])
+	}
+
+	if value, exists := profilePayload["bio"]; !exists || value != nil {
+		t.Fatalf("expected bio to be null, got %v", value)
+	}
+
+	if value, exists := profilePayload["image"]; !exists || value != nil {
+		t.Fatalf("expected image to be null, got %v", value)
+	}
+
+	if following, ok := profilePayload["following"].(bool); !ok || following {
+		t.Fatalf("expected following to be false, got %v", profilePayload["following"])
+	}
+}
+
+func TestGetProfileWithAuth(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+
+	viewer, err := NewUserRepository(common.DB).FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+	target, err := NewUserRepository(common.DB).FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+
+	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.ID)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	profilePayload, ok := payload["profile"]
+	if !ok {
+		t.Fatalf("expected profile payload, got: %s", resp.Body.String())
+	}
+
+	if profilePayload["username"] != "celeb_123" {
+		t.Fatalf("expected username celeb_123, got %v", profilePayload["username"])
+	}
+
+	if value, exists := profilePayload["bio"]; !exists || value != nil {
+		t.Fatalf("expected bio to be null, got %v", value)
+	}
+
+	if value, exists := profilePayload["image"]; !exists || value != nil {
+		t.Fatalf("expected image to be null, got %v", value)
+	}
+
+	if following, ok := profilePayload["following"].(bool); !ok || following {
+		t.Fatalf("expected following to be false, got %v", profilePayload["following"])
+	}
+}
+
+func TestGetProfileWithAuthFollowingTrue(t *testing.T) {
+	setupTestDB(t)
+	seedUser(t, "viewer_123", "viewer123@example.com", "password123")
+	seedProfileUser(t, "celeb_123", "celeb123@example.com", "password123")
+
+	repository := NewUserRepository(common.DB)
+	viewer, err := repository.FindByEmail("viewer123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load viewer: %v", err)
+	}
+	target, err := repository.FindByEmail("celeb123@example.com")
+	if err != nil {
+		t.Fatalf("failed to load target profile: %v", err)
+	}
+	seedFollow(t, viewer.ID, target.ID)
+
+	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.ID)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	profilePayload, ok := payload["profile"]
+	if !ok {
+		t.Fatalf("expected profile payload, got: %s", resp.Body.String())
+	}
+
+	if following, ok := profilePayload["following"].(bool); !ok || !following {
+		t.Fatalf("expected following to be true, got %v", profilePayload["following"])
 	}
 }
 
