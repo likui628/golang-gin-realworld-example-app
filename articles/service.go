@@ -93,8 +93,8 @@ func (service *ArticleService) GetArticleBySlug(slug string, userId uint) (Artic
 	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
-func (service *ArticleService) GetArticles(userId uint) ([]ArticleOutput, error) {
-	articles, err := service.repository.GetArticles()
+func (service *ArticleService) GetArticles(userId uint, authorId uint) ([]ArticleOutput, error) {
+	articles, err := service.repository.GetArticles(authorId)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (service *ArticleService) GetArticles(userId uint) ([]ArticleOutput, error)
 		return nil, err
 	}
 
-	followingMap, err := service.userRepository.GetFollowingByAuthorIDs(userId)
+	followingMap, err := service.userRepository.GetFollowingByAuthorIDs(authorIDs)
 	if err != nil {
 		return nil, err
 	}

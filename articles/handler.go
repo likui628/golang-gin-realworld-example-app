@@ -1,6 +1,7 @@
 package articles
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -61,7 +62,14 @@ func (handler *ArticleHandler) GetArticles(c *gin.Context) {
 	if ok {
 		userId = currentUser.ID
 	}
-	articles, err := handler.service.GetArticles(userId)
+	author := c.Query("author")
+	authorId, err := strconv.ParseUint(author, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, common.NewError("invalid_id", err))
+		return
+	}
+	log.Println("authorId:", authorId)
+	articles, err := handler.service.GetArticles(userId, uint(authorId))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
 		return

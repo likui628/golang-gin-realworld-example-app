@@ -7,7 +7,7 @@ import (
 type ArticleRepository interface {
 	Create(article *ArticleModel) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
-	GetArticles() ([]ArticleModel, error)
+	GetArticles(authorId uint) ([]ArticleModel, error)
 
 	IsFavorited(userId uint, articleId uint) (bool, error)
 	GetFavoritedArticleIDs(userId uint, articleIds []uint) (map[uint]bool, error)
@@ -62,9 +62,13 @@ func (repository GormRepository) GetArticleBySlug(slug string) (ArticleModel, er
 	return article, nil
 }
 
-func (repository GormRepository) GetArticles() ([]ArticleModel, error) {
+func (repository GormRepository) GetArticles(authorId uint) ([]ArticleModel, error) {
 	var articles []ArticleModel
-	if err := repository.db.Preload("Tags").Preload("Author").Find(&articles).Error; err != nil {
+	query := repository.db.Preload("Tags").Preload("Author")
+	if authorId != 0 {
+		query = query.Where("author_id = ?", authorId)
+	}
+	if err := query.Find(&articles).Error; err != nil {
 		return nil, err
 	}
 	return articles, nil
