@@ -31,7 +31,7 @@ func setupRouter(db *gorm.DB) *gin.Engine {
 	userHandler := users.NewUserHandler(userService)
 
 	articleRepository := articles.NewArticleRepository(db)
-	articleService := articles.NewArticleService(articleRepository)
+	articleService := articles.NewArticleService(articleRepository, userRepository)
 	articleHandler := articles.NewArticleHandler(articleService)
 
 	r := gin.Default()
@@ -47,6 +47,7 @@ func setupRouter(db *gorm.DB) *gin.Engine {
 	articles.ArticlesRegister(authedArticles, articleHandler)
 
 	publicArticles := v1.Group("/articles")
+	publicArticles.Use(users.OptionalAuthMiddleware(userService))
 	articles.ArticlePublicRegister(publicArticles, articleHandler)
 
 	tags := v1.Group("/tags")

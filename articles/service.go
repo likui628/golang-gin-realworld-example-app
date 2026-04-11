@@ -2,6 +2,7 @@ package articles
 
 import (
 	"github.com/likui628/golang-gin-realworld-example-app/common"
+	"github.com/likui628/golang-gin-realworld-example-app/users"
 )
 
 type CreateArticleInput struct {
@@ -13,8 +14,9 @@ type CreateArticleInput struct {
 
 type ArticleOutput struct {
 	ArticleModel
-	Favorited      bool
-	FavoritesCount int64
+	Favorited       bool
+	FavoritesCount  int64
+	AuthorFollowing bool
 }
 
 type CreateCommentInput struct {
@@ -26,11 +28,30 @@ type CommentOutput struct {
 }
 
 type ArticleService struct {
-	repository ArticleRepository
+	repository     ArticleRepository
+	userRepository users.UserRepository
 }
 
-func NewArticleService(repository ArticleRepository) ArticleService {
-	return ArticleService{repository: repository}
+func NewArticleService(repository ArticleRepository, userRepository users.UserRepository) ArticleService {
+	return ArticleService{repository: repository, userRepository: userRepository}
+}
+
+func (service *ArticleService) buildArticleOutput(article ArticleModel, userId uint, favorited bool, favoritesCount int64) (ArticleOutput, error) {
+	authorFollowing := false
+	if userId != 0 && userId != article.AuthorId {
+		var err error
+		authorFollowing, err = service.userRepository.IsFollowing(userId, article.AuthorId)
+		if err != nil {
+			return ArticleOutput{}, err
+		}
+	}
+
+	return ArticleOutput{
+		ArticleModel:    article,
+		Favorited:       favorited,
+		FavoritesCount:  favoritesCount,
+		AuthorFollowing: authorFollowing,
+	}, nil
 }
 
 func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleInput) (ArticleOutput, error) {
@@ -52,19 +73,15 @@ func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleI
 		return ArticleOutput{}, err
 	}
 
-	return ArticleOutput{
-		ArticleModel:   article,
-		Favorited:      false,
-		FavoritesCount: 0,
-	}, nil
+	return service.buildArticleOutput(article, authorID, false, 0)
 }
 
-func (service *ArticleService) GetArticleBySlug(slug string) (ArticleOutput, error) {
+func (service *ArticleService) GetArticleBySlug(slug string, userId uint) (ArticleOutput, error) {
 	article, err := service.repository.GetArticleBySlug(slug)
 	if err != nil {
 		return ArticleOutput{}, err
 	}
-	favorited, err := service.repository.IsFavorited(0, article.ID)
+	favorited, err := service.repository.IsFavorited(userId, article.ID)
 	if err != nil {
 		return ArticleOutput{}, err
 	}
@@ -73,11 +90,7 @@ func (service *ArticleService) GetArticleBySlug(slug string) (ArticleOutput, err
 		return ArticleOutput{}, err
 	}
 
-	return ArticleOutput{
-		ArticleModel:   article,
-		Favorited:      favorited,
-		FavoritesCount: favoritesCount,
-	}, nil
+	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
 func (service *ArticleService) FavoriteArticle(userId uint, slug string) (ArticleOutput, error) {
@@ -95,11 +108,7 @@ func (service *ArticleService) FavoriteArticle(userId uint, slug string) (Articl
 		return ArticleOutput{}, err
 	}
 
-	return ArticleOutput{
-		ArticleModel:   article,
-		Favorited:      favorited,
-		FavoritesCount: favoritesCount,
-	}, nil
+	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
 func (service *ArticleService) UnfavoriteArticle(userId uint, slug string) (ArticleOutput, error) {
@@ -117,11 +126,7 @@ func (service *ArticleService) UnfavoriteArticle(userId uint, slug string) (Arti
 		return ArticleOutput{}, err
 	}
 
-	return ArticleOutput{
-		ArticleModel:   article,
-		Favorited:      favorited,
-		FavoritesCount: favoritesCount,
-	}, nil
+	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
 func (service *ArticleService) GetTags() ([]string, error) {

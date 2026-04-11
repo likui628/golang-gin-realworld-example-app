@@ -1,6 +1,8 @@
 package articles
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 type ArticleRepository interface {
 	Create(article *ArticleModel) error

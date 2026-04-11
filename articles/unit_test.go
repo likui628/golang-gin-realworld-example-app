@@ -17,7 +17,7 @@ import (
 )
 
 func newTestArticleService() ArticleService {
-	return NewArticleService(NewArticleRepository(common.DB))
+	return NewArticleService(NewArticleRepository(common.DB), users.NewUserRepository(common.DB))
 }
 
 func newTestArticleHandler() ArticleHandler {
@@ -41,14 +41,20 @@ func setupArticleTestDB(t *testing.T) {
 func seedArticleAuthor(t *testing.T) users.UserModel {
 	t.Helper()
 
+	return seedArticleUser(t, "articleuser", "article@example.com")
+}
+
+func seedArticleUser(t *testing.T, username, email string) users.UserModel {
+	t.Helper()
+
 	service := users.NewUserService(users.NewUserRepository(common.DB))
 	registered, err := service.Register(users.RegisterUserInput{
-		Username: "articleuser",
-		Email:    "article@example.com",
+		Username: username,
+		Email:    email,
 		Password: "password123",
 	})
 	if err != nil {
-		t.Fatalf("failed to seed article author: %v", err)
+		t.Fatalf("failed to seed article user: %v", err)
 	}
 
 	return registered.UserModel
@@ -193,8 +199,8 @@ func performGetArticleRequest(t *testing.T, slug, authorizationHeader string) *h
 
 	userService := users.NewUserService(users.NewUserRepository(common.DB))
 	articlesGroup := r.Group("/articles")
-	articlesGroup.Use(users.AuthMiddleware(userService))
-	ArticlesRegister(articlesGroup, newTestArticleHandler())
+	articlesGroup.Use(users.OptionalAuthMiddleware(userService))
+	ArticlePublicRegister(articlesGroup, newTestArticleHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/articles/"+slug, nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -486,6 +492,50 @@ func TestGetArticleBySlugSuccess(t *testing.T) {
 
 	if !tagSet["golang"] || !tagSet["testing"] {
 		t.Fatalf("expected tags 'golang' and 'testing', got %v", tagList)
+	}
+
+	authorPayload, ok := retrievedArticle["author"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected author object, got %v", retrievedArticle["author"])
+	}
+
+	if following, ok := authorPayload["following"].(bool); !ok || following {
+		t.Fatalf("expected author.following to be false for self lookup, got %v", authorPayload["following"])
+	}
+}
+
+func TestGetArticleBySlugAuthorFollowingTrue(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+	viewer := seedArticleUser(t, "articleviewer", "viewer@example.com")
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Followed Author","description":"desc","body":"body","tagList":["go"]}}`)
+	if err := users.NewUserRepository(common.DB).FollowUser(viewer.ID, author.ID); err != nil {
+		t.Fatalf("failed to follow article author: %v", err)
+	}
+
+	resp := performGetArticleRequest(t, slug, "Token "+common.GenToken(viewer.ID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", resp.Body.String())
+	}
+
+	authorPayload, ok := articlePayload["author"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected author object, got %v", articlePayload["author"])
+	}
+
+	if following, ok := authorPayload["following"].(bool); !ok || !following {
+		t.Fatalf("expected author.following to be true, got %v", authorPayload["following"])
 	}
 }
 

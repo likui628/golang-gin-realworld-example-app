@@ -52,7 +52,7 @@ func (s ArticleSerializer) Response() ArticleResponse {
 			Username:  s.Article.Author.Username,
 			Bio:       s.Article.Author.Bio,
 			Image:     imageToString(s.Article.Author.Image),
-			Following: false, // TODO: set following status
+			Following: s.Article.AuthorFollowing,
 		},
 		CreateAt:  s.Article.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		UpdatedAt: s.Article.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),

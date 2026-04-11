@@ -42,8 +42,12 @@ func (handler *ArticleHandler) CreateArticle(c *gin.Context) {
 
 func (handler *ArticleHandler) GetArticle(c *gin.Context) {
 	slug := c.Param("slug")
-	article, err := handler.service.GetArticleBySlug(slug)
-	log.Printf("article.Tags: %+v", article.Tags)
+	currentUser, ok := users.CurrentUser(c)
+	var userId uint
+	if ok {
+		userId = currentUser.ID
+	}
+	article, err := handler.service.GetArticleBySlug(slug, userId)
 	if err != nil {
 		c.JSON(http.StatusNotFound, common.NewError("article", err))
 		return
