@@ -213,6 +213,33 @@ func performGetArticleRequest(t *testing.T, slug, authorizationHeader string) *h
 	return resp
 }
 
+func performGetArticlesRequest(t *testing.T, rawQuery, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.OptionalAuthMiddleware(userService))
+	ArticlePublicRegister(articlesGroup, newTestArticleHandler())
+
+	path := "/articles"
+	if rawQuery != "" {
+		path += "?" + rawQuery
+	}
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func performFavoriteArticleRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -536,6 +563,92 @@ func TestGetArticleBySlugAuthorFollowingTrue(t *testing.T) {
 
 	if following, ok := authorPayload["following"].(bool); !ok || !following {
 		t.Fatalf("expected author.following to be true, got %v", authorPayload["following"])
+	}
+}
+
+func TestGetArticlesFilterByAuthorUsername(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleUser(t, "author-one", "author-one@example.com")
+	otherAuthor := seedArticleUser(t, "author-two", "author-two@example.com")
+
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Author One Article","description":"desc","body":"body","tagList":["go"]}}`)
+	createArticleAndReturnSlug(t, otherAuthor.ID, `{"article":{"title":"Author Two Article","description":"desc","body":"body","tagList":["gin"]}}`)
+
+	resp := performGetArticlesRequest(t, "author=author-one", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlesPayload, ok := payload["articles"].([]interface{})
+	if !ok {
+		t.Fatalf("expected articles array, got: %v", payload["articles"])
+	}
+	if len(articlesPayload) != 1 {
+		t.Fatalf("expected 1 article, got %d: %v", len(articlesPayload), articlesPayload)
+	}
+	if articleCount := int64(payload["articleCount"].(float64)); articleCount != 1 {
+		t.Fatalf("expected articleCount 1, got %d", articleCount)
+	}
+
+	article, ok := articlesPayload[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected article object, got: %v", articlesPayload[0])
+	}
+	requireRealWorldArticleResponse(t, article, "author-one")
+	if article["title"] != "Author One Article" {
+		t.Fatalf("expected filtered article title %q, got %v", "Author One Article", article["title"])
+	}
+}
+
+func TestGetArticlesFilterByTag(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Tagged Go","description":"desc","body":"body","tagList":["go","backend"]}}`)
+	createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Tagged Gin","description":"desc","body":"body","tagList":["gin"]}}`)
+
+	resp := performGetArticlesRequest(t, "tag=backend", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlesPayload, ok := payload["articles"].([]interface{})
+	if !ok {
+		t.Fatalf("expected articles array, got: %v", payload["articles"])
+	}
+	if len(articlesPayload) != 1 {
+		t.Fatalf("expected 1 article, got %d: %v", len(articlesPayload), articlesPayload)
+	}
+	if articleCount := int64(payload["articleCount"].(float64)); articleCount != 1 {
+		t.Fatalf("expected articleCount 1, got %d", articleCount)
+	}
+
+	article, ok := articlesPayload[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected article object, got: %v", articlesPayload[0])
+	}
+	requireRealWorldArticleResponse(t, article, "articleuser")
+	if article["title"] != "Tagged Go" {
+		t.Fatalf("expected filtered article title %q, got %v", "Tagged Go", article["title"])
+	}
+
+	tagList := requireRealWorldStringArrayField(t, article, "tagList")
+	tagSet := map[string]bool{}
+	for _, tag := range tagList {
+		tagSet[tag] = true
+	}
+	if !tagSet["backend"] {
+		t.Fatalf("expected filtered article to include tag %q, got %v", "backend", tagList)
 	}
 }
 

@@ -93,8 +93,8 @@ func (service *ArticleService) GetArticleBySlug(slug string, userId uint) (Artic
 	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
-func (service *ArticleService) GetArticles(userId uint, authorId uint) ([]ArticleOutput, error) {
-	articles, err := service.repository.GetArticles(authorId)
+func (service *ArticleService) GetArticles(userId uint, authorUsername, tag string) ([]ArticleOutput, error) {
+	articles, err := service.repository.GetArticles(authorUsername, tag)
 	if err != nil {
 		return nil, err
 	}

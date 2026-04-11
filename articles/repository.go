@@ -1,13 +1,14 @@
 package articles
 
 import (
+	"github.com/likui628/golang-gin-realworld-example-app/users"
 	"gorm.io/gorm"
 )
 
 type ArticleRepository interface {
 	Create(article *ArticleModel) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
-	GetArticles(authorId uint) ([]ArticleModel, error)
+	GetArticles(authorUsername, tag string) ([]ArticleModel, error)
 
 	IsFavorited(userId uint, articleId uint) (bool, error)
 	GetFavoritedArticleIDs(userId uint, articleIds []uint) (map[uint]bool, error)
@@ -62,11 +63,19 @@ func (repository GormRepository) GetArticleBySlug(slug string) (ArticleModel, er
 	return article, nil
 }
 
-func (repository GormRepository) GetArticles(authorId uint) ([]ArticleModel, error) {
+func (repository GormRepository) GetArticles(authorUsername, tag string) ([]ArticleModel, error) {
 	var articles []ArticleModel
 	query := repository.db.Preload("Tags").Preload("Author")
-	if authorId != 0 {
-		query = query.Where("author_id = ?", authorId)
+	if authorUsername != "" {
+		authorIDs := repository.db.Model(&users.UserModel{}).Select("id").Where("username = ?", authorUsername)
+		query = query.Where("author_id IN (?)", authorIDs)
+	}
+	if tag != "" {
+		articleIDs := repository.db.Table("article_tags").
+			Select("article_model_id").
+			Joins("JOIN tag_models ON tag_models.id = article_tags.tag_model_id").
+			Where("tag_models.tag = ?", tag)
+		query = query.Where("id IN (?)", articleIDs)
 	}
 	if err := query.Find(&articles).Error; err != nil {
 		return nil, err
