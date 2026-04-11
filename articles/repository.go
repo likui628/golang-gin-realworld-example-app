@@ -7,9 +7,13 @@ import (
 type ArticleRepository interface {
 	Create(article *ArticleModel) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
+	GetArticles() ([]ArticleModel, error)
 
 	IsFavorited(userId uint, articleId uint) (bool, error)
+	GetFavoritedArticleIDs(userId uint, articleIds []uint) (map[uint]bool, error)
+
 	CountFavorites(articleId uint) (int64, error)
+	CountFavoritesByArticleIDs(articleIds []uint) (map[uint]int64, error)
 	FavoriteArticle(userId uint, slug string) (ArticleModel, error)
 	UnfavoriteArticle(userId uint, slug string) (ArticleModel, error)
 
@@ -58,6 +62,14 @@ func (repository GormRepository) GetArticleBySlug(slug string) (ArticleModel, er
 	return article, nil
 }
 
+func (repository GormRepository) GetArticles() ([]ArticleModel, error) {
+	var articles []ArticleModel
+	if err := repository.db.Preload("Tags").Preload("Author").Find(&articles).Error; err != nil {
+		return nil, err
+	}
+	return articles, nil
+}
+
 func (repository GormRepository) IsFavorited(userId uint, articleId uint) (bool, error) {
 	var favorite FavoriteModel
 	err := repository.db.Where("user_id = ? AND article_id = ?", userId, articleId).First(&favorite).Error
@@ -70,12 +82,36 @@ func (repository GormRepository) IsFavorited(userId uint, articleId uint) (bool,
 	return true, nil
 }
 
+func (repository GormRepository) GetFavoritedArticleIDs(userId uint, articleIds []uint) (map[uint]bool, error) {
+	var favorites []FavoriteModel
+	if err := repository.db.Where("user_id = ? AND article_id IN ?", userId, articleIds).Find(&favorites).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uint]bool)
+	for _, favorite := range favorites {
+		result[favorite.ArticleId] = true
+	}
+	return result, nil
+}
+
 func (repository GormRepository) CountFavorites(articleId uint) (int64, error) {
 	var count int64
 	if err := repository.db.Model(&FavoriteModel{}).Where("article_id = ?", articleId).Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (repository GormRepository) CountFavoritesByArticleIDs(articleIds []uint) (map[uint]int64, error) {
+	var favorites []FavoriteModel
+	if err := repository.db.Where("article_id IN ?", articleIds).Find(&favorites).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[uint]int64)
+	for _, favorite := range favorites {
+		counts[favorite.ArticleId]++
+	}
+	return counts, nil
 }
 
 func (repository GormRepository) FavoriteArticle(userId uint, slug string) (ArticleModel, error) {

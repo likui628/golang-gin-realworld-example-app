@@ -93,6 +93,44 @@ func (service *ArticleService) GetArticleBySlug(slug string, userId uint) (Artic
 	return service.buildArticleOutput(article, userId, favorited, favoritesCount)
 }
 
+func (service *ArticleService) GetArticles(userId uint) ([]ArticleOutput, error) {
+	articles, err := service.repository.GetArticles()
+	if err != nil {
+		return nil, err
+	}
+	articleIDs := make([]uint, len(articles))
+	authorIDs := make([]uint, len(articles))
+	for i, a := range articles {
+		articleIDs[i] = a.ID
+		authorIDs[i] = a.AuthorId
+	}
+
+	favoritedMap, err := service.repository.GetFavoritedArticleIDs(userId, articleIDs)
+	if err != nil {
+		return nil, err
+	}
+	favoritesCountMap, err := service.repository.CountFavoritesByArticleIDs(articleIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	followingMap, err := service.userRepository.GetFollowingByAuthorIDs(userId)
+	if err != nil {
+		return nil, err
+	}
+
+	outputs := make([]ArticleOutput, len(articles))
+	for i, article := range articles {
+		outputs[i] = ArticleOutput{
+			ArticleModel:    article,
+			Favorited:       favoritedMap[article.ID],
+			FavoritesCount:  favoritesCountMap[article.ID],
+			AuthorFollowing: followingMap[article.AuthorId],
+		}
+	}
+	return outputs, nil
+}
+
 func (service *ArticleService) FavoriteArticle(userId uint, slug string) (ArticleOutput, error) {
 	article, err := service.repository.FavoriteArticle(userId, slug)
 	if err != nil {

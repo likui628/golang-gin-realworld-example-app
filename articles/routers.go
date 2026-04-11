@@ -12,6 +12,8 @@ func ArticlesRegister(router *gin.RouterGroup, handler ArticleHandler) {
 }
 
 func ArticlePublicRegister(router *gin.RouterGroup, handler ArticleHandler) {
+	router.GET("", handler.GetArticles)
+
 	router.GET("/:slug", handler.GetArticle)
 	router.GET("/:slug/comments", handler.GetComments)
 }

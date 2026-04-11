@@ -1,7 +1,6 @@
 package articles
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
@@ -56,6 +55,24 @@ func (handler *ArticleHandler) GetArticle(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }
 
+func (handler *ArticleHandler) GetArticles(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	var userId uint
+	if ok {
+		userId = currentUser.ID
+	}
+	articles, err := handler.service.GetArticles(userId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	var articleResponses []ArticleResponse
+	for _, article := range articles {
+		articleResponses = append(articleResponses, ArticleSerializer{Article: article}.Response())
+	}
+	c.JSON(http.StatusOK, gin.H{"articles": articleResponses, "articleCount": len(articleResponses)})
+}
+
 func (handler *ArticleHandler) FavoriteArticle(c *gin.Context) {
 	currentUser, ok := users.CurrentUser(c)
 	if !ok {
@@ -82,7 +99,6 @@ func (handler *ArticleHandler) UnfavoriteArticle(c *gin.Context) {
 	}
 
 	slug := c.Param("slug")
-	log.Printf("%d - %s\n", currentUser.ID, slug)
 
 	article, err := handler.service.UnfavoriteArticle(currentUser.ID, slug)
 	if err != nil {
