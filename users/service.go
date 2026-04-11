@@ -175,3 +175,22 @@ func (service UserService) FollowUser(followerID uint, followedID uint) (UserPro
 
 	return UserProfileOutput{UserModel: profile, Following: true}, nil
 }
+
+func (service UserService) UnfollowUser(followerID uint, followedID uint) (UserProfileOutput, error) {
+	if followerID == followedID {
+		return UserProfileOutput{}, errors.New("cannot unfollow yourself")
+	}
+	profile, err := service.repository.FindByID(followedID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return UserProfileOutput{}, ErrUserNotFound
+		}
+		return UserProfileOutput{}, err
+	}
+
+	if err := service.repository.UnfollowUser(followerID, followedID); err != nil {
+		return UserProfileOutput{}, err
+	}
+
+	return UserProfileOutput{UserModel: profile, Following: false}, nil
+}

@@ -9,6 +9,7 @@ type UserRepository interface {
 	FindByID(id uint) (UserModel, error)
 	IsFollowing(followerID uint, followedID uint) (bool, error)
 	FollowUser(followerID uint, followedID uint) error
+	UnfollowUser(followerID uint, followedID uint) error
 }
 
 type GormRepository struct {
@@ -58,4 +59,8 @@ func (repository GormRepository) FollowUser(followerID uint, followedID uint) er
 		FollowedId: followedID,
 	}
 	return repository.db.FirstOrCreate(&follow, FollowModel{FollowerId: followerID, FollowedId: followedID}).Error
+}
+
+func (repository GormRepository) UnfollowUser(followerID uint, followedID uint) error {
+	return repository.db.Where("follower_id = ? AND followed_id = ?", followerID, followedID).Delete(&FollowModel{}).Error
 }

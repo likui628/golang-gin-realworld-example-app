@@ -57,7 +57,7 @@ func setupRouter(db *gorm.DB) *gin.Engine {
 	users.ProfilePublicRegister(publicProfiles, userHandler)
 
 	authProfiles := v1.Group("/profiles")
-	authProfiles.Use(users.OptionalAuthMiddleware(userService))
+	authProfiles.Use(users.AuthMiddleware(userService))
 	users.ProfileRegister(authProfiles, userHandler)
 
 	return r

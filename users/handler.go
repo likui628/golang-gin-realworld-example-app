@@ -144,3 +144,30 @@ func (handler UserHandler) FollowUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"profile": ProfileSerializer{Profile: profile}.Response()})
 }
+
+func (handler UserHandler) UnfollowUser(c *gin.Context) {
+	currentUser, ok := CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", ErrUnauthorized))
+		return
+	}
+
+	uid := c.Param("uid")
+	uidUint, err := strconv.ParseUint(uid, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, common.NewError("profile", ErrInvalidID))
+		return
+	}
+
+	profile, err := handler.service.UnfollowUser(currentUser.ID, uint(uidUint))
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, common.NewError("profile", err))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"profile": ProfileSerializer{Profile: profile}.Response()})
+}

@@ -14,6 +14,7 @@ func UserRegister(router *gin.RouterGroup, handler UserHandler) {
 
 func ProfileRegister(router *gin.RouterGroup, handler UserHandler) {
 	router.POST("/:uid/follow", handler.FollowUser)
+	router.DELETE("/:uid/follow", handler.UnfollowUser)
 }
 
 func ProfilePublicRegister(router *gin.RouterGroup, handler UserHandler) {
