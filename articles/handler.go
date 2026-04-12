@@ -40,6 +40,37 @@ func (handler *ArticleHandler) CreateArticle(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }
 
+func (handler *ArticleHandler) UpdateArticle(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+	slug := c.Param("slug")
+
+	articleValidator := UpdateArticleInputValidator{}
+	if err := articleValidator.Bind(c); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+		return
+	}
+	articleInput := articleValidator.Input()
+	article, err := handler.service.UpdateArticle(currentUser.ID, slug, articleInput)
+	if err != nil {
+		if errors.Is(err, ErrArticleNotFound) {
+			c.JSON(http.StatusNotFound, common.NewError("article", err))
+			return
+		}
+		if errors.Is(err, ErrArticleForbidden) {
+			c.JSON(http.StatusForbidden, common.NewError("article", err))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"article": ArticleSerializer{Article: article}.Response()})
+}
+
 func (handler *ArticleHandler) DeleteArticle(c *gin.Context) {
 	currentUser, ok := users.CurrentUser(c)
 	if !ok {

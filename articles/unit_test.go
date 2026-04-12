@@ -104,6 +104,28 @@ func performDeleteArticleRequest(t *testing.T, slug, authorizationHeader string)
 	return resp
 }
 
+func performUpdateArticleRequest(t *testing.T, slug, authorizationHeader, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodPut, "/articles/"+slug, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func TestCreateArticleSuccess(t *testing.T) {
 	setupArticleTestDB(t)
 	author := seedArticleAuthor(t)
@@ -210,6 +232,171 @@ func TestCreateArticleUnauthorized(t *testing.T) {
 
 	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
 		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestUpdateArticleSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Original Title","description":"Original description","body":"Original body","tagList":["go"]}}`)
+	resp := performUpdateArticleRequest(t, slug, "Token "+common.GenToken(author.ID), `{"article":{"title":"Updated Title","description":"Updated description"}}`)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlePayload, ok := payload["article"]
+	if !ok {
+		t.Fatalf("expected article payload, got: %s", resp.Body.String())
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "articleuser")
+
+	if articlePayload["title"] != "Updated Title" {
+		t.Fatalf("expected updated title, got %v", articlePayload["title"])
+	}
+	if articlePayload["description"] != "Updated description" {
+		t.Fatalf("expected updated description, got %v", articlePayload["description"])
+	}
+	if articlePayload["body"] != "Original body" {
+		t.Fatalf("expected body to remain unchanged, got %v", articlePayload["body"])
+	}
+	if articlePayload["slug"] != "updated-title" {
+		t.Fatalf("expected regenerated slug %q, got %v", "updated-title", articlePayload["slug"])
+	}
+
+	var updated ArticleModel
+	if err := common.DB.Preload("Tags").Where("id = ?", 1).First(&updated).Error; err != nil {
+		t.Fatalf("failed to reload updated article: %v", err)
+	}
+	if updated.Title != "Updated Title" {
+		t.Fatalf("expected persisted title %q, got %q", "Updated Title", updated.Title)
+	}
+	if updated.Description != "Updated description" {
+		t.Fatalf("expected persisted description %q, got %q", "Updated description", updated.Description)
+	}
+	if updated.Body != "Original body" {
+		t.Fatalf("expected persisted body to remain unchanged, got %q", updated.Body)
+	}
+	if updated.Slug != "updated-title" {
+		t.Fatalf("expected persisted slug %q, got %q", "updated-title", updated.Slug)
+	}
+	if len(updated.Tags) != 1 || updated.Tags[0].Tag != "go" {
+		t.Fatalf("expected tags to remain unchanged, got %v", updated.Tags)
+	}
+}
+
+func TestUpdateArticleValidationError(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Original Title","description":"Original description","body":"Original body"}}`)
+	longTitle := strings.Repeat("a", 256)
+	resp := performUpdateArticleRequest(t, slug, "Token "+common.GenToken(author.ID), `{"article":{"title":"`+longTitle+`"}}`)
+
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnprocessableEntity, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+	if _, exists := errorsPayload["Title"]; !exists {
+		t.Fatalf("expected Title validation error, got: %v", errorsPayload)
+	}
+}
+
+func TestUpdateArticleUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Original Title","description":"Original description","body":"Original body"}}`)
+	resp := performUpdateArticleRequest(t, slug, "", `{"article":{"title":"Updated Title"}}`)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+}
+
+func TestUpdateArticleNotFound(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	resp := performUpdateArticleRequest(t, "missing-article", "Token "+common.GenToken(author.ID), `{"article":{"title":"Updated Title"}}`)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+	if errorsPayload["article"] != ErrArticleNotFound.Error() {
+		t.Fatalf("expected article error %q, got %v", ErrArticleNotFound.Error(), errorsPayload["article"])
+	}
+}
+
+func TestUpdateArticleForbidden(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+	otherUser := seedArticleUser(t, "other-article-user", "other-article-user@example.com")
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Original Title","description":"Original description","body":"Original body"}}`)
+	resp := performUpdateArticleRequest(t, slug, "Token "+common.GenToken(otherUser.ID), `{"article":{"title":"Updated By Stranger"}}`)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusForbidden, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+	if errorsPayload["article"] != ErrArticleForbidden.Error() {
+		t.Fatalf("expected article error %q, got %v", ErrArticleForbidden.Error(), errorsPayload["article"])
+	}
+
+	var article ArticleModel
+	if err := common.DB.Where("slug = ?", slug).First(&article).Error; err != nil {
+		t.Fatalf("failed to reload original article: %v", err)
+	}
+	if article.Title != "Original Title" {
+		t.Fatalf("expected title to remain unchanged, got %q", article.Title)
 	}
 }
 

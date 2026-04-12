@@ -27,6 +27,26 @@ func (validator *CreateArticleInputValidator) Input() CreateArticleInput {
 	}
 }
 
+type UpdateArticleInputValidator struct {
+	Article struct {
+		Title       string `json:"title" binding:"omitempty,max=255"`
+		Description string `json:"description" binding:"omitempty,max=2048"`
+		Body        string `json:"body" binding:"omitempty"`
+	} `json:"article"`
+}
+
+func (validator *UpdateArticleInputValidator) Bind(c *gin.Context) error {
+	return common.Bind(c, validator)
+}
+
+func (validator *UpdateArticleInputValidator) Input() UpdateArticleInput {
+	return UpdateArticleInput{
+		Title:       validator.Article.Title,
+		Description: validator.Article.Description,
+		Body:        validator.Article.Body,
+	}
+}
+
 type CreateCommentInputValidator struct {
 	Comment struct {
 		Body string `json:"body" binding:"required"`

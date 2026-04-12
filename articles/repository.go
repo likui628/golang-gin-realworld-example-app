@@ -7,6 +7,7 @@ import (
 
 type ArticleRepository interface {
 	CreateArticle(article *ArticleModel) error
+	UpdateArticle(article *ArticleModel) error
 	DeleteArticle(slug string, authId uint) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
 	GetArticles(authorUsername, tag string, limit, offset int) ([]ArticleModel, error)
@@ -38,6 +39,13 @@ func NewArticleRepository(db *gorm.DB) ArticleRepository {
 
 func (repository GormRepository) CreateArticle(article *ArticleModel) error {
 	if err := repository.db.Create(article).Error; err != nil {
+		return err
+	}
+	return repository.db.Preload("Tags").Preload("Author").First(article, article.ID).Error
+}
+
+func (repository GormRepository) UpdateArticle(article *ArticleModel) error {
+	if err := repository.db.Save(article).Error; err != nil {
 		return err
 	}
 	return repository.db.Preload("Tags").Preload("Author").First(article, article.ID).Error

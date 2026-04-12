@@ -1,15 +1,26 @@
 package articles
 
 import (
+	"errors"
+
 	"github.com/likui628/golang-gin-realworld-example-app/common"
 	"github.com/likui628/golang-gin-realworld-example-app/users"
 )
+
+var ErrArticleNotFound = errors.New("article not found")
+var ErrArticleForbidden = errors.New("forbidden")
 
 type CreateArticleInput struct {
 	Title       string
 	Description string
 	Body        string
 	TagList     []string
+}
+
+type UpdateArticleInput struct {
+	Title       string
+	Description string
+	Body        string
 }
 
 type ArticleOutput struct {
@@ -74,6 +85,42 @@ func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleI
 	}
 
 	return service.buildArticleOutput(article, authorID, false, 0)
+}
+
+func (service *ArticleService) UpdateArticle(authorID uint, slug string, input UpdateArticleInput) (ArticleOutput, error) {
+	article, err := service.repository.GetArticleBySlug(slug)
+	if err != nil {
+		return ArticleOutput{}, ErrArticleNotFound
+	}
+	if article.AuthorId != authorID {
+		return ArticleOutput{}, ErrArticleForbidden
+	}
+
+	if input.Title != "" {
+		article.Title = input.Title
+		article.Slug = common.GenerateSlug(input.Title)
+	}
+	if input.Description != "" {
+		article.Description = input.Description
+	}
+	if input.Body != "" {
+		article.Body = input.Body
+	}
+
+	if err := service.repository.UpdateArticle(&article); err != nil {
+		return ArticleOutput{}, err
+	}
+
+	favorited, err := service.repository.IsFavorited(authorID, article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+	favoritesCount, err := service.repository.CountFavorites(article.ID)
+	if err != nil {
+		return ArticleOutput{}, err
+	}
+
+	return service.buildArticleOutput(article, authorID, favorited, favoritesCount)
 }
 
 func (service *ArticleService) DeleteArticle(slug string, authId uint) error {
