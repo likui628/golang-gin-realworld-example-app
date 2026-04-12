@@ -108,6 +108,42 @@ func (handler *ArticleHandler) GetArticles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"articles": articleResponses, "articleCount": len(articleResponses)})
 }
 
+func (handler *ArticleHandler) GetArticlesFeed(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+	limit := c.Query("limit")
+	if limit == "" {
+		limit = "20"
+	}
+	offset := c.Query("offset")
+	if offset == "" {
+		offset = "0"
+	}
+	limitInt, err := strconv.Atoi(limit)
+	if err != nil || limitInt < 0 {
+		c.JSON(http.StatusBadRequest, common.NewError("limit", errors.New("invalid limit")))
+		return
+	}
+	offsetInt, err := strconv.Atoi(offset)
+	if err != nil || offsetInt < 0 {
+		c.JSON(http.StatusBadRequest, common.NewError("offset", errors.New("invalid offset")))
+		return
+	}
+	articles, err := handler.service.GetArticlesFeed(currentUser.ID, limitInt, offsetInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	var articleResponses []ArticleResponse
+	for _, article := range articles {
+		articleResponses = append(articleResponses, ArticleSerializer{Article: article}.Response())
+	}
+	c.JSON(http.StatusOK, gin.H{"articles": articleResponses, "articleCount": len(articleResponses)})
+}
+
 func (handler *ArticleHandler) FavoriteArticle(c *gin.Context) {
 	currentUser, ok := users.CurrentUser(c)
 	if !ok {

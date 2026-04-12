@@ -4,6 +4,7 @@ import "github.com/gin-gonic/gin"
 
 func ArticlesRegister(router *gin.RouterGroup, handler ArticleHandler) {
 	router.POST("", handler.CreateArticle)
+	router.GET("/feed", handler.GetArticlesFeed)
 	router.DELETE("/:slug", handler.DeleteArticle)
 	router.POST("/:slug/favorite", handler.FavoriteArticle)
 	router.DELETE("/:slug/favorite", handler.UnfavoriteArticle)

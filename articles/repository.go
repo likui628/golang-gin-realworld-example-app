@@ -10,6 +10,7 @@ type ArticleRepository interface {
 	DeleteArticle(slug string, authId uint) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
 	GetArticles(authorUsername, tag string, limit, offset int) ([]ArticleModel, error)
+	GetArticlesFeed(userId uint, limit, offset int) ([]ArticleModel, error)
 
 	IsFavorited(userId uint, articleId uint) (bool, error)
 	GetFavoritedArticleIDs(userId uint, articleIds []uint) (map[uint]bool, error)
@@ -82,6 +83,15 @@ func (repository GormRepository) GetArticles(authorUsername, tag string, limit, 
 		query = query.Where("id IN (?)", articleIDs)
 	}
 	if err := query.Limit(limit).Offset(offset).Find(&articles).Error; err != nil {
+		return nil, err
+	}
+	return articles, nil
+}
+
+func (repository GormRepository) GetArticlesFeed(userId uint, limit, offset int) ([]ArticleModel, error) {
+	var articles []ArticleModel
+	subQuery := repository.db.Model(&users.FollowModel{}).Select("followed_id").Where("follower_id = ?", userId)
+	if err := repository.db.Preload("Tags").Preload("Author").Where("author_id IN (?)", subQuery).Limit(limit).Offset(offset).Find(&articles).Error; err != nil {
 		return nil, err
 	}
 	return articles, nil
