@@ -40,6 +40,20 @@ func (handler *ArticleHandler) CreateArticle(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"article": ArticleSerializer{Article: article}.Response()})
 }
 
+func (handler *ArticleHandler) DeleteArticle(c *gin.Context) {
+	currentUser, ok := users.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, common.NewError("auth", users.ErrUnauthorized))
+		return
+	}
+	slug := c.Param("slug")
+	if err := handler.service.DeleteArticle(slug, currentUser.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
+}
+
 func (handler *ArticleHandler) GetArticle(c *gin.Context) {
 	slug := c.Param("slug")
 	currentUser, ok := users.CurrentUser(c)

@@ -69,11 +69,15 @@ func (service *ArticleService) CreateArticle(authorID uint, input CreateArticleI
 		Tags:        tags,
 	}
 
-	if err := service.repository.Create(&article); err != nil {
+	if err := service.repository.CreateArticle(&article); err != nil {
 		return ArticleOutput{}, err
 	}
 
 	return service.buildArticleOutput(article, authorID, false, 0)
+}
+
+func (service *ArticleService) DeleteArticle(slug string, authId uint) error {
+	return service.repository.DeleteArticle(slug, authId)
 }
 
 func (service *ArticleService) GetArticleBySlug(slug string, userId uint) (ArticleOutput, error) {
@@ -114,7 +118,7 @@ func (service *ArticleService) GetArticles(userId uint, authorUsername, tag stri
 		return nil, err
 	}
 
-	followingMap, err := service.userRepository.GetFollowingByAuthorIDs(authorIDs)
+	followingMap, err := service.userRepository.GetFollowingByIDs(userId, authorIDs)
 	if err != nil {
 		return nil, err
 	}

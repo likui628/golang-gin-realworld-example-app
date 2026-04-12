@@ -82,6 +82,28 @@ func performCreateArticleRequest(t *testing.T, authorizationHeader, body string)
 	return resp
 }
 
+func performDeleteArticleRequest(t *testing.T, slug, authorizationHeader string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	userService := users.NewUserService(users.NewUserRepository(common.DB))
+	articlesGroup := r.Group("/articles")
+	articlesGroup.Use(users.AuthMiddleware(userService))
+	ArticlesRegister(articlesGroup, newTestArticleHandler())
+
+	req := httptest.NewRequest(http.MethodDelete, "/articles/"+slug, nil)
+	req.Header.Set("Content-Type", "application/json")
+	if authorizationHeader != "" {
+		req.Header.Set("Authorization", authorizationHeader)
+	}
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	return resp
+}
+
 func TestCreateArticleSuccess(t *testing.T) {
 	setupArticleTestDB(t)
 	author := seedArticleAuthor(t)
@@ -649,6 +671,161 @@ func TestGetArticlesFilterByTag(t *testing.T) {
 	}
 	if !tagSet["backend"] {
 		t.Fatalf("expected filtered article to include tag %q, got %v", "backend", tagList)
+	}
+}
+
+func TestGetArticlesInvalidLimit(t *testing.T) {
+	setupArticleTestDB(t)
+
+	resp := performGetArticlesRequest(t, "limit=invalid", "")
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["limit"] != "invalid limit" {
+		t.Fatalf("expected limit error %q, got %v", "invalid limit", errorsPayload["limit"])
+	}
+}
+
+func TestGetArticlesInvalidOffset(t *testing.T) {
+	setupArticleTestDB(t)
+
+	resp := performGetArticlesRequest(t, "offset=-1", "")
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["offset"] != "invalid offset" {
+		t.Fatalf("expected offset error %q, got %v", "invalid offset", errorsPayload["offset"])
+	}
+}
+
+func TestGetArticlesIncludesViewerState(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleUser(t, "author-followed", "author-followed@example.com")
+	viewer := seedArticleUser(t, "article-viewer", "article-viewer@example.com")
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Viewer State","description":"desc","body":"body","tagList":["go"]}}`)
+	if err := users.NewUserRepository(common.DB).FollowUser(viewer.ID, author.ID); err != nil {
+		t.Fatalf("failed to follow article author: %v", err)
+	}
+
+	service := newTestArticleService()
+	if _, err := service.FavoriteArticle(viewer.ID, slug); err != nil {
+		t.Fatalf("failed to favorite article: %v", err)
+	}
+
+	resp := performGetArticlesRequest(t, "author=author-followed", "Token "+common.GenToken(viewer.ID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	articlesPayload, ok := payload["articles"].([]interface{})
+	if !ok {
+		t.Fatalf("expected articles array, got: %v", payload["articles"])
+	}
+	if len(articlesPayload) != 1 {
+		t.Fatalf("expected 1 article, got %d: %v", len(articlesPayload), articlesPayload)
+	}
+
+	articlePayload, ok := articlesPayload[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected article object, got: %v", articlesPayload[0])
+	}
+	requireRealWorldArticleResponse(t, articlePayload, "author-followed")
+
+	if favorited, ok := articlePayload["favorited"].(bool); !ok || !favorited {
+		t.Fatalf("expected favorited=true, got %v", articlePayload["favorited"])
+	}
+
+	if favoritesCount, ok := articlePayload["favoritesCount"].(float64); !ok || favoritesCount != 1 {
+		t.Fatalf("expected favoritesCount=1, got %v", articlePayload["favoritesCount"])
+	}
+
+	authorPayload, ok := articlePayload["author"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected author object, got %v", articlePayload["author"])
+	}
+
+	if following, ok := authorPayload["following"].(bool); !ok || !following {
+		t.Fatalf("expected author.following=true, got %v", authorPayload["following"])
+	}
+}
+
+func TestDeleteArticleSuccess(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Delete Me","description":"desc","body":"body","tagList":["go"]}}`)
+	resp := performDeleteArticleRequest(t, slug, "Token "+common.GenToken(author.ID))
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusNoContent, resp.Code, resp.Body.String())
+	}
+
+	var count int64
+	if err := common.DB.Model(&ArticleModel{}).Where("slug = ?", slug).Count(&count).Error; err != nil {
+		t.Fatalf("failed to verify article deletion: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected article to be deleted, found %d rows", count)
+	}
+}
+
+func TestDeleteArticleUnauthorized(t *testing.T) {
+	setupArticleTestDB(t)
+	author := seedArticleAuthor(t)
+
+	slug := createArticleAndReturnSlug(t, author.ID, `{"article":{"title":"Protected Delete","description":"desc","body":"body"}}`)
+	resp := performDeleteArticleRequest(t, slug, "")
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d, body: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+
+	errorsPayload, ok := payload["errors"]
+	if !ok {
+		t.Fatalf("expected errors object, got: %s", resp.Body.String())
+	}
+
+	if errorsPayload["auth"] != users.ErrUnauthorized.Error() {
+		t.Fatalf("expected auth error %q, got %v", users.ErrUnauthorized.Error(), errorsPayload["auth"])
+	}
+
+	var count int64
+	if err := common.DB.Model(&ArticleModel{}).Where("slug = ?", slug).Count(&count).Error; err != nil {
+		t.Fatalf("failed to verify article remained persisted: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected article to remain after unauthorized delete, found %d rows", count)
 	}
 }
 

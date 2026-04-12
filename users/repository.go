@@ -8,7 +8,7 @@ type UserRepository interface {
 	FindByEmail(email string) (UserModel, error)
 	FindByID(id uint) (UserModel, error)
 	IsFollowing(followerID uint, followedID uint) (bool, error)
-	GetFollowingByAuthorIDs(authorIDs []uint) (map[uint]bool, error)
+	GetFollowingByIDs(followerID uint, authorIDs []uint) (map[uint]bool, error)
 	FollowUser(followerID uint, followedID uint) error
 	UnfollowUser(followerID uint, followedID uint) error
 }
@@ -54,9 +54,9 @@ func (repository GormRepository) IsFollowing(followerID uint, followedID uint) (
 	return true, nil
 }
 
-func (repository GormRepository) GetFollowingByAuthorIDs(authorIDs []uint) (map[uint]bool, error) {
+func (repository GormRepository) GetFollowingByIDs(followerID uint, authorIDs []uint) (map[uint]bool, error) {
 	var follows []FollowModel
-	err := repository.db.Where("follower_id IN ?", authorIDs).Find(&follows).Error
+	err := repository.db.Where("follower_id = ? AND followed_id IN ?", followerID, authorIDs).Find(&follows).Error
 	if err != nil {
 		return nil, err
 	}

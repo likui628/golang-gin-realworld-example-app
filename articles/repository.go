@@ -6,7 +6,8 @@ import (
 )
 
 type ArticleRepository interface {
-	Create(article *ArticleModel) error
+	CreateArticle(article *ArticleModel) error
+	DeleteArticle(slug string, authId uint) error
 	GetArticleBySlug(slug string) (ArticleModel, error)
 	GetArticles(authorUsername, tag string, limit, offset int) ([]ArticleModel, error)
 
@@ -34,12 +35,15 @@ func NewArticleRepository(db *gorm.DB) ArticleRepository {
 	return GormRepository{db: db}
 }
 
-func (repository GormRepository) Create(article *ArticleModel) error {
+func (repository GormRepository) CreateArticle(article *ArticleModel) error {
 	if err := repository.db.Create(article).Error; err != nil {
 		return err
 	}
 	return repository.db.Preload("Tags").Preload("Author").First(article, article.ID).Error
+}
 
+func (repository GormRepository) DeleteArticle(slug string, authId uint) error {
+	return repository.db.Where("slug = ? AND author_id = ?", slug, authId).Delete(&ArticleModel{}).Error
 }
 
 func (repository GormRepository) FindOrCreateTags(tags []string) ([]TagModel, error) {
