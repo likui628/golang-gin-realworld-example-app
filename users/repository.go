@@ -6,6 +6,7 @@ type UserRepository interface {
 	Create(user *UserModel) error
 	Update(user *UserModel) error
 	FindByEmail(email string) (UserModel, error)
+	FindByUsername(username string) (UserModel, error)
 	FindByID(id uint) (UserModel, error)
 	IsFollowing(followerID uint, followedID uint) (bool, error)
 	GetFollowingByIDs(followerID uint, authorIDs []uint) (map[uint]bool, error)
@@ -27,6 +28,12 @@ func (repository GormRepository) Create(user *UserModel) error {
 
 func (repository GormRepository) Update(user *UserModel) error {
 	return repository.db.Save(user).Error
+}
+
+func (repository GormRepository) FindByUsername(username string) (UserModel, error) {
+	var user UserModel
+	err := repository.db.Where("username = ?", username).First(&user).Error
+	return user, err
 }
 
 func (repository GormRepository) FindByEmail(email string) (UserModel, error) {

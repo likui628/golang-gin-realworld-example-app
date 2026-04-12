@@ -93,19 +93,14 @@ func (handler UserHandler) UpdateUser(c *gin.Context) {
 }
 
 func (handler UserHandler) GetProfile(c *gin.Context) {
-	uid := c.Param("uid")
-	uidUint, err := strconv.ParseUint(uid, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, common.NewError("profile", ErrInvalidID))
-		return
-	}
+	username := c.Param("username")
 
 	var currentUserID *uint
 	if currentUser, ok := CurrentUser(c); ok {
 		currentUserID = &currentUser.ID
 	}
 
-	profile, err := handler.service.GetProfile(uint(uidUint), currentUserID)
+	profile, err := handler.service.GetProfileByUsername(username, currentUserID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, common.NewError("profile", err))

@@ -108,7 +108,7 @@ func performUserLoginRequest(t *testing.T, body string) *httptest.ResponseRecord
 	return resp
 }
 
-func performGetProfileRequest(t *testing.T, authorizationHeader string, uid uint) *httptest.ResponseRecorder {
+func performGetProfileRequest(t *testing.T, authorizationHeader string, username string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -118,7 +118,7 @@ func performGetProfileRequest(t *testing.T, authorizationHeader string, uid uint
 	profiles.Use(OptionalAuthMiddleware(service))
 	ProfilePublicRegister(profiles, newTestUserHandler())
 
-	req := httptest.NewRequest(http.MethodGet, "/profiles/"+strconv.FormatUint(uint64(uid), 10), nil)
+	req := httptest.NewRequest(http.MethodGet, "/profiles/"+username, nil)
 	if authorizationHeader != "" {
 		req.Header.Set("Authorization", authorizationHeader)
 	}
@@ -201,7 +201,7 @@ func TestGetProfileWithoutAuth(t *testing.T) {
 		t.Fatalf("failed to load target profile: %v", err)
 	}
 
-	resp := performGetProfileRequest(t, "", target.ID)
+	resp := performGetProfileRequest(t, "", target.Username)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
@@ -248,7 +248,7 @@ func TestGetProfileWithAuth(t *testing.T) {
 		t.Fatalf("failed to load target profile: %v", err)
 	}
 
-	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.ID)
+	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.Username)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())
@@ -297,7 +297,7 @@ func TestGetProfileWithAuthFollowingTrue(t *testing.T) {
 	}
 	seedFollow(t, viewer.ID, target.ID)
 
-	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.ID)
+	resp := performGetProfileRequest(t, "Token "+common.GenToken(viewer.ID), target.Username)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d, body: %s", http.StatusOK, resp.Code, resp.Body.String())

@@ -137,8 +137,8 @@ func isUniqueConstraintError(err error) bool {
 	return strings.Contains(message, "unique constraint") || strings.Contains(message, "duplicated key")
 }
 
-func (service UserService) GetProfile(uid uint, currentUserID *uint) (UserProfileOutput, error) {
-	profile, err := service.repository.FindByID(uid)
+func (service UserService) GetProfileByUsername(username string, currentUserID *uint) (UserProfileOutput, error) {
+	profile, err := service.repository.FindByUsername(username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return UserProfileOutput{}, ErrUserNotFound

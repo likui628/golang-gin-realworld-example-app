@@ -18,5 +18,5 @@ func ProfileRegister(router *gin.RouterGroup, handler UserHandler) {
 }
 
 func ProfilePublicRegister(router *gin.RouterGroup, handler UserHandler) {
-	router.GET("/:uid", handler.GetProfile)
+	router.GET("/:username", handler.GetProfile)
 }
