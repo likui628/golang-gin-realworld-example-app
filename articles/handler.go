@@ -1,6 +1,7 @@
 package articles
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -63,8 +64,25 @@ func (handler *ArticleHandler) GetArticles(c *gin.Context) {
 	}
 	author := c.Query("author")
 	tag := c.Query("tag")
-
-	articles, err := handler.service.GetArticles(userId, author, tag)
+	limit := c.Query("limit")
+	if limit == "" {
+		limit = "20"
+	}
+	offset := c.Query("offset")
+	if offset == "" {
+		offset = "0"
+	}
+	limitInt, err := strconv.Atoi(limit)
+	if err != nil || limitInt < 0 {
+		c.JSON(http.StatusBadRequest, common.NewError("limit", errors.New("invalid limit")))
+		return
+	}
+	offsetInt, err := strconv.Atoi(offset)
+	if err != nil || offsetInt < 0 {
+		c.JSON(http.StatusBadRequest, common.NewError("offset", errors.New("invalid offset")))
+		return
+	}
+	articles, err := handler.service.GetArticles(userId, author, tag, limitInt, offsetInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, common.NewError("database", err))
 		return
